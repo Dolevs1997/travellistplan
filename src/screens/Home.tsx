@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowLeft, Bell, MapPin, Plus, Search } from 'lucide-react'
-import MiniRoute from '../components/MiniRoute'
+import DestinationsMap from '../components/DestinationsMap'
 import { BottomNav, Fab, IconButton, ScreenHeader, Tag, cx } from '../components/ui'
 import { otherTrips } from '../data/mockTrip'
 import { countdownLabel, daysUntil, tripRange, tripStats } from '../data/helpers'
@@ -21,7 +21,7 @@ export default function Home() {
   const trip = state.trips.find((t) => t.id === 'lisbon-porto') ?? state.trips.find((t) => t.destination && t.days.length) ?? state.trips[0]
   const myTrips = state.trips.filter((t) => t.id !== trip.id)
   const stats = tripStats(trip)
-  const hasRoute = trip.days.some((d) => d.stops.length > 0)
+  const hasMap = !!trip.destination && trip.days.length > 0
 
   const openTrip = (id: string) => {
     dispatch({ type: 'setActiveTrip', tripId: id })
@@ -74,9 +74,9 @@ export default function Home() {
         </form>
 
         <article className="overflow-hidden rounded-phone border border-border bg-surface">
-          {hasRoute && trip.days.length > 0 && (
+          {hasMap && (
             <div className="relative">
-              <MiniRoute trip={trip} />
+              <DestinationsMap trip={trip} />
               <span className="absolute top-3 right-3 flex h-[30px] items-center gap-1.5 rounded-full border border-border bg-surface/92 px-3 text-xs font-medium">
                 <span className="size-1.5 rounded-full bg-accent" />
                 {countdownLabel(daysUntil(trip.days[0].date))}
