@@ -60,6 +60,33 @@ export const isoInDays = (n: number, from = new Date()) => {
   return isoDate(d)
 }
 
+export const MAX_TRIP_DAYS = 30
+
+/** Number of days from departure to return, both included (0 when the range is invalid). */
+export function tripLength(startIso: string, endIso: string) {
+  if (!startIso || !endIso) return 0
+  const ms = new Date(`${endIso}T12:00:00`).getTime() - new Date(`${startIso}T12:00:00`).getTime()
+  const n = Math.round(ms / 86_400_000) + 1
+  return n > 0 ? n : 0
+}
+
+/** All ISO dates from start to end, inclusive. */
+export function isoRange(startIso: string, endIso: string) {
+  const n = tripLength(startIso, endIso)
+  const start = new Date(`${startIso}T12:00:00`)
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    return isoDate(d)
+  })
+}
+
+/** "26.11" */
+export const shortDate = (iso: string) => {
+  const [, m, d] = iso.split('-').map(Number)
+  return `${d}.${m}`
+}
+
 export interface FreeSlot {
   start: string
   end: string

@@ -7,7 +7,8 @@ import Budget from './screens/Budget'
 import Profile from './screens/Profile'
 import PlaceDetail from './screens/PlaceDetail'
 import AddStop from './screens/AddStop'
-import ChooseDestination from './screens/ChooseDestination'
+import NewTrip from './screens/NewTrip'
+import TripPlan from './screens/TripPlan'
 
 export default function App() {
   const route = useRoute()
@@ -19,17 +20,22 @@ export default function App() {
     window.scrollTo(0, 0)
   }, [route])
 
+  // Any trip screen for a trip without a destination goes to the new-trip setup
+  const tripScreen = (screen: React.ReactNode) => (hasDestination ? screen : <NewTrip key={state.trip.id} />)
+
   switch (section) {
     case 'trip':
-      return hasDestination ? <TripScreen expanded={param === 'schedule'} /> : <ChooseDestination />
+      return tripScreen(<TripScreen expanded={param === 'schedule'} />)
+    case 'plan':
+      return tripScreen(<TripPlan key={state.trip.id} />)
     case 'budget':
       return <Budget />
     case 'profile':
       return <Profile />
     case 'place':
-      return hasDestination ? <PlaceDetail stopId={param ?? ''} /> : <ChooseDestination />
+      return tripScreen(<PlaceDetail stopId={param ?? ''} />)
     case 'add':
-      return hasDestination ? <AddStop dayId={param ?? ''} highlight={extra} /> : <ChooseDestination />
+      return tripScreen(<AddStop dayId={param ?? ''} highlight={extra} />)
     default:
       return <Home />
   }

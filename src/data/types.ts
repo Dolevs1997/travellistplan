@@ -64,9 +64,45 @@ export interface Destination {
   zoom: number
 }
 
+export type ActivityKind = 'museum' | 'shopping' | 'extreme' | 'cruise' | 'tour' | 'nature' | 'show' | 'other'
+
+export interface Lodging {
+  id: string
+  name: string
+  area?: string
+  /** ISO dates */
+  checkIn: string
+  checkOut: string
+}
+
+export interface SavedRestaurant {
+  id: string
+  name: string
+  cuisine?: string
+  /** Optional day of the trip it's planned for */
+  dayId?: string
+}
+
+export interface Activity {
+  id: string
+  name: string
+  kind: ActivityKind
+  dayId?: string
+}
+
+export interface TripExtras {
+  lodgings: Lodging[]
+  restaurants: SavedRestaurant[]
+  activities: Activity[]
+}
+
 export interface Trip {
   id: string
   name: string
+  /** Places to stay, saved restaurants and activities (older saved trips may lack them) */
+  lodgings?: Lodging[]
+  restaurants?: SavedRestaurant[]
+  activities?: Activity[]
   /** Not set yet for a brand-new trip: the map then shows no city */
   destination: Destination | null
   days: Day[]

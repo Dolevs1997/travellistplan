@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react'
 import { arrayMove } from '@dnd-kit/sortable'
 import { mockTrip } from '../data/mockTrip'
-import { emptyDays, fromMin, nextStartAfter, reflowFrom, stopDuration, toMin } from '../data/helpers'
-import type { Day, Destination, Stop, Trip } from '../data/types'
+import { fromMin, isoRange, nextStartAfter, reflowFrom, stopDuration, toMin } from '../data/helpers'
+import type { Activity, Day, Destination, Lodging, SavedRestaurant, Stop, Trip, TripExtras } from '../data/types'
 
 /** What screens read: the active trip plus UI state */
 export interface State {
@@ -29,7 +29,12 @@ export type Action =
   | { type: 'moveStop'; stopId: string; toDayId: string }
   | { type: 'addExpense'; categoryId: string; amount: number }
   | { type: 'createTrip'; id: string }
-  | { type: 'setDestination'; destination: Destination; startDate: string; dayCount: number }
+  | { type: 'setupTrip'; destination: Destination; startDate: string; endDate: string; extras: TripExtras }
+  | { type: 'setTripDates'; startDate: string; endDate: string }
+  | { type: 'addLodging'; item: Lodging }
+  | { type: 'addRestaurant'; item: SavedRestaurant }
+  | { type: 'addActivity'; item: Activity }
+  | { type: 'removeExtra'; list: keyof TripExtras; id: string }
   | { type: 'setActiveTrip'; tripId: string }
   | { type: 'deleteTrip'; tripId: string }
   | { type: 'reset' }
@@ -70,6 +75,27 @@ const newBudget = (): Trip['budget'] => ({
   currency: 'EUR',
   categories: mockTrip.budget.categories.map((c) => ({ ...c, spent: 0, planned: 0 })),
 })
+
+/**
+ * Rebuild a trip's days for a new date range. Days whose date is still in range keep their
+ * stops; new dates get empty days; anything pointing at a removed day is unlinked.
+ */
+function withDates(trip: Trip, startDate: string, endDate: string): Trip {
+  const city = trip.destination?.name ?? ''
+  const byDate = new Map(trip.days.map((d) => [d.date, d]))
+  const days: Day[] = isoRange(startDate, endDate).map(
+    (date) => byDate.get(date) ?? { id: `${trip.id}-${date}`, date, city, title: city, stops: [], suggestions: [] },
+  )
+  const ids = new Set(days.map((d) => d.id))
+  const keepDay = <T extends { dayId?: string }>(x: T): T => (x.dayId && !ids.has(x.dayId) ? { ...x, dayId: undefined } : x)
+  return {
+    ...trip,
+    days,
+    progress: trip.progress && ids.has(trip.progress.dayId) ? trip.progress : undefined,
+    restaurants: (trip.restaurants ?? []).map(keepDay),
+    activities: (trip.activities ?? []).map(keepDay),
+  }
+}
 
 const mapDay = (trip: Trip, dayId: string, fn: (d: Day) => Day): Trip => ({
   ...trip,
@@ -154,17 +180,22 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
           },
         },
       }
-    case 'setDestination': {
-      const { destination, startDate, dayCount } = action
-      return {
-        trip: {
-          ...trip,
-          name: `טיול ל${destination.name}`,
-          destination,
-          days: emptyDays(trip.id, destination.name, startDate, dayCount),
-        },
-      }
+    case 'setupTrip': {
+      const { destination, startDate, endDate, extras } = action
+      // Activities/restaurants picked during setup refer to days by date; map them to the new day ids
+      const base = withDates({ ...trip, name: `טיול ל${destination.name}`, destination, days: [] }, startDate, endDate)
+      return { trip: { ...base, ...extras } }
     }
+    case 'setTripDates':
+      return { trip: withDates(trip, action.startDate, action.endDate) }
+    case 'addLodging':
+      return { trip: { ...trip, lodgings: [...(trip.lodgings ?? []), action.item] } }
+    case 'addRestaurant':
+      return { trip: { ...trip, restaurants: [...(trip.restaurants ?? []), action.item] } }
+    case 'addActivity':
+      return { trip: { ...trip, activities: [...(trip.activities ?? []), action.item] } }
+    case 'removeExtra':
+      return { trip: { ...trip, [action.list]: (trip[action.list] ?? []).filter((x) => x.id !== action.id) } }
     default:
       return { trip }
   }
@@ -201,7 +232,11 @@ function reducer(store: Store, action: Action): Store {
       const next: Store = { ...store, trips: store.trips.map((t) => (t.id === active.id ? res.trip : t)) }
       if (res.selectedStopId !== undefined) next.selectedStopId = res.selectedStopId
       if (action.type === 'addFromSuggestion') next.activeDayId = action.dayId
-      if (action.type === 'setDestination') next.activeDayId = res.trip.days[0]?.id ?? ''
+      if (action.type === 'setupTrip') next.activeDayId = res.trip.days[0]?.id ?? ''
+      if (action.type === 'setTripDates' && !res.trip.days.some((d) => d.id === store.activeDayId)) {
+        next.activeDayId = res.trip.progress?.dayId ?? res.trip.days[0]?.id ?? ''
+        next.selectedStopId = null
+      }
       return next
     }
   }

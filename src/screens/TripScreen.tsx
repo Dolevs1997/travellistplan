@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Drawer } from 'vaul'
-import { ArrowRight, Footprints, LocateFixed, Map as MapIcon, Navigation, Plus, Share2, UtensilsCrossed } from 'lucide-react'
+import { ArrowRight, ClipboardList, Footprints, LocateFixed, Map as MapIcon, Navigation, Plus, Share2, UtensilsCrossed } from 'lucide-react'
 import TripMap from '../components/TripMap'
 import Restaurants from '../components/Restaurants'
 import { nearbyRestaurantsUrl } from '../data/restaurants'
@@ -113,6 +113,9 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
           <span className="truncate text-[15px] font-semibold">{trip.name}</span>
           <span className="shrink-0 rounded-full bg-accent/12 px-2.5 py-0.5 text-xs font-semibold text-accent">· יום {dayIndex + 1}</span>
         </div>
+        <IconButton label="פרטי הטיול: תאריכים, לינה, מסעדות ופעילויות" to="/plan" variant="floating">
+          <ClipboardList size={20} aria-hidden="true" />
+        </IconButton>
         <IconButton label="שיתוף הטיול" onClick={share} variant="floating">
           <Share2 size={20} aria-hidden="true" />
         </IconButton>
