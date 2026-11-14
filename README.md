@@ -29,4 +29,5 @@ Routes are hash-based: `#/`, `#/trip`, `#/trip/schedule`, `#/place/:stopId`, `#/
 - "Now" is simulated: the traveller is at stop 2 of day 2 (`trip.progress` in the mock data).
 - MapLibre 6 needs its worker bundled separately; see `src/maplibreSetup.ts`.
 - Profile → "איפוס הטיול" restores the mock data.
+- "+" on Home creates a new trip with no destination. Until a destination is chosen (`src/screens/ChooseDestination.tsx`, list in `src/data/destinations.ts`) the map is a zoomed-out world view with all labels hidden, so no city is shown. Choosing one creates empty days and centres the map on that city.
 - Restaurants (`src/data/restaurants.ts`) are a static list per city (Lisbon, Sintra, Porto). The app shows no ratings or reviews: each item opens a Google Maps search, where reviews and photos live. "מסעדות לידי" asks for the location once and opens Google Maps' restaurant search around it. A rating-sorted nearby list inside the app would need a Google Places API key.

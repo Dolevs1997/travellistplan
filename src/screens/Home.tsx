@@ -5,7 +5,7 @@ import { BottomNav, Fab, IconButton, ScreenHeader, Tag, cx } from '../components
 import { otherTrips } from '../data/mockTrip'
 import { countdownLabel, daysUntil, tripRange, tripStats } from '../data/helpers'
 import { useTrip } from '../state/TripStore'
-import { href } from '../router'
+import { navigate } from '../router'
 
 const greeting = () => {
   const h = new Date().getHours()
@@ -16,9 +16,21 @@ const greeting = () => {
 }
 
 export default function Home() {
-  const { state } = useTrip()
-  const { trip } = state
+  const { state, dispatch } = useTrip()
+  // The featured card shows the example trip (or the first trip that has a destination)
+  const trip = state.trips.find((t) => t.id === 'lisbon-porto') ?? state.trips.find((t) => t.destination && t.days.length) ?? state.trips[0]
+  const myTrips = state.trips.filter((t) => t.id !== trip.id)
   const stats = tripStats(trip)
+  const hasRoute = trip.days.some((d) => d.stops.length > 0)
+
+  const openTrip = (id: string) => {
+    dispatch({ type: 'setActiveTrip', tripId: id })
+    navigate('/trip')
+  }
+  const newTrip = () => {
+    dispatch({ type: 'createTrip', id: `trip-${Date.now().toString(36)}` })
+    navigate('/trip')
+  }
   const [query, setQuery] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -62,29 +74,32 @@ export default function Home() {
         </form>
 
         <article className="overflow-hidden rounded-phone border border-border bg-surface">
-          <div className="relative">
-            <MiniRoute trip={trip} />
-            <span className="absolute top-3 right-3 flex h-[30px] items-center gap-1.5 rounded-full border border-border bg-surface/92 px-3 text-xs font-medium">
-              <span className="size-1.5 rounded-full bg-accent" />
-              {countdownLabel(daysUntil(trip.days[0].date))}
-            </span>
-          </div>
+          {hasRoute && trip.days.length > 0 && (
+            <div className="relative">
+              <MiniRoute trip={trip} />
+              <span className="absolute top-3 right-3 flex h-[30px] items-center gap-1.5 rounded-full border border-border bg-surface/92 px-3 text-xs font-medium">
+                <span className="size-1.5 rounded-full bg-accent" />
+                {countdownLabel(daysUntil(trip.days[0].date))}
+              </span>
+            </div>
+          )}
           <div className="flex flex-col gap-4 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 flex-col gap-1">
                 <span className="text-[11px] font-medium text-muted">הטיול הבא</span>
                 <h2 className="text-[17px] font-semibold">{trip.name}</h2>
                 <span className="text-[13px] text-muted">
-                  {tripRange(trip)} · {trip.days.length} ימים
+                  {trip.days.length ? `${tripRange(trip)} · ${trip.days.length} ימים` : 'עוד לא נבחר יעד'}
                 </span>
               </div>
-              <a
-                href={href('/trip')}
+              <button
+                type="button"
+                onClick={() => openTrip(trip.id)}
                 aria-label={`פתיחת הטיול ${trip.name}`}
                 className="flex size-11 shrink-0 items-center justify-center rounded-tile bg-accent text-on-accent transition-transform duration-200 ease-out hover:scale-105"
               >
                 <ArrowLeft size={20} aria-hidden="true" />
-              </a>
+              </button>
             </div>
             <dl className="grid grid-cols-3 gap-2">
               <Stat value={stats.stops} label="עצירות" />
@@ -104,6 +119,31 @@ export default function Home() {
             </button>
           </div>
           <ul className="flex flex-col gap-2">
+            {myTrips.map((t) => (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  onClick={() => openTrip(t.id)}
+                  className="flex w-full items-center gap-3 rounded-card border border-border bg-surface p-2.5 text-start transition-colors duration-200 ease-out hover:border-border-strong"
+                >
+                  <span
+                    className={cx(
+                      'flex size-11 shrink-0 items-center justify-center rounded-tile',
+                      t.destination ? 'bg-water text-accent' : 'border-[1.5px] border-dashed border-accent-2 text-accent-2',
+                    )}
+                  >
+                    <MapPin size={20} aria-hidden="true" />
+                  </span>
+                  <span className="flex flex-1 flex-col gap-0.5">
+                    <span className="text-base font-semibold">{t.name}</span>
+                    <span className={cx('text-[13px]', t.destination ? 'text-muted' : 'text-accent-2')}>
+                      {t.destination ? `${t.destination.country} · ${t.days.length} ימים` : 'עוד לא נבחר יעד'}
+                    </span>
+                  </span>
+                  <Tag tone="muted">טיוטה</Tag>
+                </button>
+              </li>
+            ))}
             {otherTrips.map((t) => (
               <li key={t.id}>
                 <button
@@ -135,7 +175,7 @@ export default function Home() {
         {notice && <span className="rounded-full border border-border bg-raised px-4 py-2 text-center text-sm">{notice}</span>}
       </div>
 
-      <Fab label="טיול חדש" onClick={() => flash('יצירת טיול חדש תגיע בגרסה הבאה')}>
+      <Fab label="טיול חדש" onClick={newTrip}>
         <Plus size={26} strokeWidth={2.25} aria-hidden="true" />
       </Fab>
       <BottomNav active="home" />

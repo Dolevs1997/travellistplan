@@ -55,12 +55,23 @@ export interface BudgetCategory {
   planned: number
 }
 
+export interface Destination {
+  id: string
+  name: string
+  country: string
+  lat: number
+  lng: number
+  zoom: number
+}
+
 export interface Trip {
   id: string
   name: string
+  /** Not set yet for a brand-new trip: the map then shows no city */
+  destination: Destination | null
   days: Day[]
-  /** Demo "now": which stop the traveller is currently at */
-  progress: { dayId: string; stopId: string }
+  /** Demo "now": which stop the traveller is currently at (none before the trip starts) */
+  progress?: { dayId: string; stopId: string }
   budget: { currency: 'EUR'; categories: BudgetCategory[] }
 }
 

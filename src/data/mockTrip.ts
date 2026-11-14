@@ -3,6 +3,7 @@ import type { Trip, TripSummary } from './types'
 export const mockTrip: Trip = {
   id: 'lisbon-porto',
   name: 'ליסבון ופורטו',
+  destination: { id: 'lisbon', name: 'ליסבון', country: 'פורטוגל', lat: 38.7223, lng: -9.1393, zoom: 12 },
   progress: { dayId: 'd2', stopId: 's5' },
   budget: {
     currency: 'EUR',

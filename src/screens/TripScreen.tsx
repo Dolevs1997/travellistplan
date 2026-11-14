@@ -232,7 +232,7 @@ function PeekContent({
   onDay: (id: string) => void
 }) {
   const stops = day.stops
-  const curIdx = day.id === trip.progress.dayId ? stops.findIndex((s) => s.id === trip.progress.stopId) : -1
+  const curIdx = day.id === trip.progress?.dayId ? stops.findIndex((s) => s.id === trip.progress?.stopId) : -1
   const selIdx = stops.findIndex((s) => s.id === selectedStopId)
   const focusIdx = selIdx !== -1 ? selIdx : curIdx !== -1 ? Math.min(curIdx + 1, stops.length - 1) : 0
   const focus = stops[focusIdx]
@@ -253,7 +253,9 @@ function PeekContent({
           </span>
           <span className="flex flex-col gap-0.5">
             <span className="text-[17px] font-semibold">יום פנוי</span>
-            <span className="text-[13px] text-muted">{day.suggestions.length} הצעות באזור – הוספת עצירה</span>
+            <span className="text-[13px] text-muted">
+              {day.suggestions.length ? `${day.suggestions.length} הצעות באזור – הוספת עצירה` : 'עוד אין כאן עצירות'}
+            </span>
           </span>
         </a>
       ) : (

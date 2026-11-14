@@ -22,12 +22,13 @@ export function dayIndexOf(trip: Trip, dayId: string) {
 }
 
 export function stopStatus(trip: Trip, dayId: string, stopId: string): StopStatus {
+  if (!trip.progress) return 'upcoming'
   const progressDay = dayIndexOf(trip, trip.progress.dayId)
   const thisDay = dayIndexOf(trip, dayId)
   if (thisDay < progressDay) return 'done'
   if (thisDay > progressDay) return 'upcoming'
   const stops = trip.days[thisDay].stops
-  const cur = stops.findIndex((s) => s.id === trip.progress.stopId)
+  const cur = stops.findIndex((s) => s.id === trip.progress?.stopId)
   const idx = stops.findIndex((s) => s.id === stopId)
   if (cur === -1) return 'upcoming'
   if (idx < cur) return 'done'
@@ -36,7 +37,27 @@ export function stopStatus(trip: Trip, dayId: string, stopId: string): StopStatu
 }
 
 export function isPastDay(trip: Trip, dayId: string) {
+  if (!trip.progress) return false
   return dayIndexOf(trip, dayId) < dayIndexOf(trip, trip.progress.dayId)
+}
+
+const isoDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/** Empty days for a new trip, starting on `startIso`. */
+export function emptyDays(tripId: string, city: string, startIso: string, count: number): Day[] {
+  const start = new Date(`${startIso}T12:00:00`)
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    return { id: `${tripId}-d${i + 1}`, date: isoDate(d), city, title: city, stops: [], suggestions: [] }
+  })
+}
+
+export const isoInDays = (n: number, from = new Date()) => {
+  const d = new Date(from)
+  d.setDate(d.getDate() + n)
+  return isoDate(d)
 }
 
 export interface FreeSlot {

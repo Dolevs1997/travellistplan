@@ -96,8 +96,9 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
       map = new MLMap({
         container: container.current,
         style: STYLE_URL,
-        center: [-9.2, 38.7],
-        zoom: 13,
+        // Start on the trip's destination; never on a city the user hasn't chosen
+        center: trip.destination ? [trip.destination.lng, trip.destination.lat] : [12, 28],
+        zoom: trip.destination?.zoom ?? 1.2,
         attributionControl: false,
         dragRotate: false,
         pitchWithRotate: false,
@@ -139,7 +140,7 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
       features: coords.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }] : [],
     })
     const anchorStop =
-      day.id === trip.progress.dayId ? day.stops.find((s) => s.id === trip.progress.stopId) : day.stops[day.stops.length - 1]
+      day.id === trip.progress?.dayId ? day.stops.find((s) => s.id === trip.progress?.stopId) : day.stops[day.stops.length - 1]
     ;(map.getSource('detour') as GeoJSONSource).setData({
       type: 'FeatureCollection',
       features:
@@ -210,7 +211,12 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
     const map = mapRef.current
     if (!map) return
     const pts = [...day.stops, ...(showSuggestions ? day.suggestions : [])].map((p) => [p.lng, p.lat] as [number, number])
-    if (pts.length === 0) return
+    if (pts.length === 0) {
+      // Nothing planned yet: show the destination itself
+      if (trip.destination)
+        map.easeTo({ center: [trip.destination.lng, trip.destination.lat], zoom: trip.destination.zoom, padding: padding(), duration: duration() })
+      return
+    }
     if (pts.length === 1) {
       map.easeTo({ center: pts[0], zoom: 14.5, padding: padding(), duration: duration() })
       return
@@ -238,7 +244,7 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready || recenterKey === 0) return
-    const s = day.id === trip.progress.dayId ? day.stops.find((x) => x.id === trip.progress.stopId) : undefined
+    const s = day.id === trip.progress?.dayId ? day.stops.find((x) => x.id === trip.progress?.stopId) : undefined
     if (s) map.easeTo({ center: [s.lng, s.lat], zoom: 15.5, padding: padding(), duration: duration() })
     else fitDay()
     // eslint-disable-next-line react-hooks/exhaustive-deps

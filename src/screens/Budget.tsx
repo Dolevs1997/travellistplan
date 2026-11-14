@@ -22,8 +22,9 @@ export default function Budget() {
   const spent = cats.reduce((n, c) => n + c.spent, 0)
   const planned = cats.reduce((n, c) => n + c.planned, 0)
   const left = planned - spent
-  const daysLeft = Math.max(1, trip.days.length - dayIndexOf(trip, trip.progress.dayId))
-  const pct = Math.min(100, Math.round((spent / planned) * 100))
+  const daysLeft = Math.max(1, trip.days.length - Math.max(0, trip.progress ? dayIndexOf(trip, trip.progress.dayId) : 0))
+  const ratio = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0)
+  const pct = ratio(spent, planned)
 
   const [open, setOpen] = useState(false)
 
@@ -53,10 +54,16 @@ export default function Budget() {
             <span className="rounded-full bg-accent transition-[width] duration-250 ease-out" style={{ width: `${pct}%` }} />
           </div>
           <div className="flex items-center justify-between text-[13px]">
-            <span className="font-semibold text-accent">
-              {left >= 0 ? `נשארו ${eur(left)} (${100 - pct}%)` : `חריגה של ${eur(-left)}`}
-            </span>
-            <span className="text-muted">כ-{eur(Math.max(0, Math.round(left / daysLeft)))} ליום לשאר הטיול</span>
+            {planned > 0 ? (
+              <>
+                <span className="font-semibold text-accent">
+                  {left >= 0 ? `נשארו ${eur(left)} (${100 - pct}%)` : `חריגה של ${eur(-left)}`}
+                </span>
+                <span className="text-muted">כ-{eur(Math.max(0, Math.round(left / daysLeft)))} ליום לשאר הטיול</span>
+              </>
+            ) : (
+              <span className="text-muted">עוד לא נקבע תקציב לטיול הזה</span>
+            )}
           </div>
         </article>
 
@@ -67,7 +74,7 @@ export default function Budget() {
           <ul className="flex flex-col rounded-phone border border-border bg-surface px-3.5 py-1.5">
             {cats.map((c, i) => {
               const Icon = ICONS[c.id] ?? Ticket
-              const p = Math.min(100, Math.round((c.spent / c.planned) * 100))
+              const p = ratio(c.spent, c.planned)
               return (
                 <li key={c.id} className={cx('flex items-center gap-3 py-2.5', i < cats.length - 1 && 'border-b border-border')}>
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-tile bg-water text-accent">
