@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Rubik", system-ui, sans-serif;
+
+  --color-bg: #0B0E13;
+  --color-map-bg: #11151C;
+  --color-surface: #151A22;
+  --color-raised: #1E2430;
+  --color-border: #262E3B;
+  --color-border-strong: #343D4C;
+  --color-handle: #3A4352;
+  --color-text: #EEF2F7;
+  --color-muted: #A3ADBD;
+  --color-accent: #2EE6C5;
+  --color-on-accent: #06201B;
+  --color-accent-2: #FF9F43;
+  --color-on-accent-2: #2A1606;
+  --color-water: #0E2633;
+  --color-park: #13261F;
+
+  --radius-tile: 14px;
+  --radius-card: 18px;
+  --radius-phone: 24px;
+  --radius-sheet: 28px;
+
+  --shadow-fab: 0 10px 30px rgba(46, 230, 197, 0.3);
+  --shadow-sheet: 0 -20px 40px rgba(0, 0, 0, 0.45);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button {
+    cursor: pointer;
+    font: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Map pins (MapLibre HTML markers) */
+.pin {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 13px/1 var(--font-sans);
+  border: 0;
+  padding: 0;
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+}
+.pin--done {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: 0 0 0 6px rgba(46, 230, 197, 0.2);
+}
+.pin--current {
+  width: 34px;
+  height: 34px;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border: 2px solid var(--color-bg);
+  box-shadow: 0 0 0 7px rgba(46, 230, 197, 0.25), 0 0 0 15px rgba(46, 230, 197, 0.1);
+}
+.pin--upcoming {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 3px solid var(--color-accent);
+  font-weight: 600;
+}
+.pin--suggestion {
+  background: var(--color-accent-2);
+  color: var(--color-on-accent-2);
+  box-shadow: 0 0 0 6px rgba(255, 159, 67, 0.2);
+}
+.pin--selected {
+  transform: scale(1.2);
+  outline: 2px solid var(--color-text);
+  outline-offset: 3px;
+}
+/* No `position` here: MapLibre's .maplibregl-marker must stay position:absolute */
+.pin-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pin-label {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  white-space: nowrap;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font: 500 12px/1 var(--font-sans);
+  padding: 7px 10px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.maplibregl-ctrl-top-left {
+  top: 68px;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  background: rgba(21, 26, 34, 0.9) !important;
+  color: var(--color-muted);
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--color-muted) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
