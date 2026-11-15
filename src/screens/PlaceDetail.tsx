@@ -1,6 +1,7 @@
-import { useId } from 'react'
-import { ArrowRight, Navigation } from 'lucide-react'
+import { useId, useState } from 'react'
+import { ArrowRight, BookOpen, Navigation } from 'lucide-react'
 import PlaceMap from '../components/PlaceMap'
+import PlaceSheet from '../components/PlaceSheet'
 import { IconButton, IconTile, Tag, cx } from '../components/ui'
 import { findStop, useTrip } from '../state/TripStore'
 import { dayChipLabel, directionsUrl, stopStatus, timeRange, transitLabel } from '../data/helpers'
@@ -12,6 +13,7 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
   const found = findStop(trip, stopId)
   const noteId = useId()
   const moveId = useId()
+  const [infoOpen, setInfoOpen] = useState(false)
 
   if (!found) {
     return (
@@ -51,6 +53,10 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
       <main className="absolute inset-x-0 top-[268px] bottom-0 mx-auto flex max-w-[560px] flex-col gap-3.5 overflow-y-auto rounded-t-sheet border-t border-border bg-surface px-4 pb-6 shadow-sheet">
         <span className="mx-auto mt-3 mb-1 h-[5px] w-10 shrink-0 rounded-full bg-handle" aria-hidden="true" />
 
+        {stop.info?.image && (
+          <img src={stop.info.image} alt={stop.name} loading="lazy" className="aspect-[16/9] w-full rounded-card bg-raised object-cover" />
+        )}
+
         <header className="flex items-center gap-3.5">
           <IconTile kind={stop.kind} size={56} />
           <div className="flex min-w-0 flex-col gap-1">
@@ -60,6 +66,17 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
             </span>
           </div>
         </header>
+
+        {stop.info && (
+          <button
+            type="button"
+            onClick={() => setInfoOpen(true)}
+            className="flex h-12 items-center justify-center gap-2 rounded-tile border border-border-strong text-[15px] font-medium"
+          >
+            <BookOpen size={18} aria-hidden="true" />
+            על המקום: תקציר, עובדות וטיפים
+          </button>
+        )}
 
         {(stop.heritage || stop.needsBooking) && (
           <div className="flex flex-wrap gap-1.5">
@@ -140,6 +157,7 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
           </div>
         </div>
       </main>
+      <PlaceSheet place={infoOpen ? (stop.info ?? null) : null} onClose={() => setInfoOpen(false)} />
     </div>
   )
 }

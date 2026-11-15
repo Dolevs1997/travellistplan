@@ -72,7 +72,7 @@ export default function Timeline({ trip, day, selectedStopId, onSelect, onReorde
             <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
           </span>
           <a
-            href={href(`/add/${day.id}`)}
+            href={href(`/day/${day.id}`)}
             className="flex h-[52px] flex-1 items-center justify-center rounded-card border-[1.5px] border-dashed border-accent-2 bg-accent-2/6 px-3 text-center text-[15px] font-medium text-accent-2 transition-colors duration-200 ease-out hover:bg-accent-2/12"
           >
             {slot.wholeDay ? 'היום פנוי – הוספת עצירה' : `${slotPartLabel(slot.start)} פנוי – הוספת עצירה`}

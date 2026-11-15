@@ -1,5 +1,29 @@
-export type StopKind = 'food' | 'heritage' | 'museum' | 'view' | 'nature' | 'market'
-export type TransitMode = 'walk' | 'tram' | 'bus' | 'metro' | 'train'
+export type StopKind = 'food' | 'heritage' | 'museum' | 'view' | 'nature' | 'market' | 'shopping'
+export type TransitMode = 'walk' | 'tram' | 'bus' | 'metro' | 'train' | 'car'
+
+/**
+ * A real-world place from a data source (Wikidata/Wikipedia or OpenStreetMap search today;
+ * a Google Places id can be added later as another source).
+ */
+export interface PlaceInfo {
+  source: 'wikidata' | 'osm'
+  /** Wikidata id (Q…) or OSM id ("node/123") */
+  ref: string
+  name: string
+  kind: StopKind
+  lat: number
+  lng: number
+  /** Short line like "מוזיאון לאמנות ברומא" */
+  description?: string
+  /** Image URL and its Wikimedia Commons page (for credit) */
+  image?: string
+  imagePage?: string
+  /** Wikipedia article used for the summary and facts */
+  article?: { lang: 'he' | 'en'; title: string }
+  address?: string
+  /** Popularity used for ranking (number of Wikipedia language editions) */
+  popularity?: number
+}
 export type StopStatus = 'done' | 'current' | 'upcoming'
 
 export interface Transit {
@@ -25,6 +49,8 @@ export interface Stop {
   note?: string
   /** How to get from this stop to the next one */
   transitToNext?: Transit
+  /** Photo, summary source etc. for places picked from recommendations or search */
+  info?: PlaceInfo
 }
 
 export interface Suggestion {
@@ -46,6 +72,9 @@ export interface Day {
   title: string
   stops: Stop[]
   suggestions: Suggestion[]
+  /** Planned hours for the day, "HH:MM" (default 10:00–18:00) */
+  startTime?: string
+  endTime?: string
 }
 
 export interface BudgetCategory {

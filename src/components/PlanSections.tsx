@@ -36,7 +36,7 @@ const mapsSearch = (name: string, city: string) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${city}`)}`
 
 const inputCls =
-  'h-11 w-full min-w-0 rounded-tile border border-border bg-raised px-3 text-[15px] text-text [color-scheme:dark] outline-none placeholder:text-muted focus:border-accent'
+  'h-11 w-full min-w-0 rounded-tile border border-border bg-raised px-3 text-[15px] text-text outline-none placeholder:text-muted focus:border-accent'
 
 function Field({ label, children, className }: { label: string; children: (id: string) => ReactNode; className?: string }) {
   const id = useId()

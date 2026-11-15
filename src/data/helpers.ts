@@ -1,4 +1,4 @@
-import type { Day, Stop, StopStatus, Transit, TransitMode, Trip } from './types'
+import type { Day, Stop, StopKind, StopStatus, Transit, TransitMode, Trip } from './types'
 
 export const toMin = (hhmm: string) => {
   const [h, m] = hhmm.split(':').map(Number)
@@ -12,10 +12,13 @@ export const fromMin = (min: number) => {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-const roundUpTo15 = (min: number) => Math.ceil(min / 15) * 15
+/** Times step by 5 minutes so travel and visit lengths can be fine-tuned */
+const roundUpTo5 = (min: number) => Math.ceil(min / 5) * 5
 
-const DAY_END = '18:00'
-const FREE_IF_ENDS_BEFORE = '16:00'
+export const DEFAULT_DAY_START = '10:00'
+export const DEFAULT_DAY_END = '18:00'
+export const dayStart = (day: Day) => day.startTime ?? DEFAULT_DAY_START
+export const dayEnd = (day: Day) => day.endTime ?? DEFAULT_DAY_END
 
 export function dayIndexOf(trip: Trip, dayId: string) {
   return trip.days.findIndex((d) => d.id === dayId)
@@ -93,10 +96,12 @@ export interface FreeSlot {
   wholeDay: boolean
 }
 
+/** Unplanned time left in the day (at least an hour before the day's end), if any */
 export function freeSlot(day: Day): FreeSlot | null {
-  if (day.stops.length === 0) return { start: '10:00', end: DAY_END, wholeDay: true }
+  const end = dayEnd(day)
+  if (day.stops.length === 0) return { start: dayStart(day), end, wholeDay: true }
   const last = day.stops[day.stops.length - 1]
-  if (toMin(last.end) < toMin(FREE_IF_ENDS_BEFORE)) return { start: last.end, end: DAY_END, wholeDay: false }
+  if (toMin(last.end) <= toMin(end) - 60) return { start: last.end, end, wholeDay: false }
   return null
 }
 
@@ -116,6 +121,7 @@ const MODE_LABEL: Record<TransitMode, string> = {
   bus: 'אוטובוס',
   metro: 'מטרו',
   train: 'רכבת',
+  car: 'נסיעה',
 }
 
 export const transitLabel = (t: Transit) =>
@@ -175,14 +181,44 @@ export function reflowFrom(stops: Stop[], startMin: number): Stop[] {
   return stops.map((s, i) => {
     const dur = stopDuration(s)
     const next = { ...s, start: fromMin(t), end: fromMin(t + dur) }
-    t = roundUpTo15(t + dur + (s.transitToNext?.minutes ?? 15))
+    t = roundUpTo5(t + dur + (s.transitToNext?.minutes ?? 15))
     if (i === stops.length - 1) delete next.transitToNext
     return next
   })
 }
 
-export const nextStartAfter = (stops: Stop[], travelMin: number) =>
-  stops.length === 0 ? toMin('10:00') : roundUpTo15(toMin(stops[stops.length - 1].end) + travelMin)
+export const nextStartAfter = (stops: Stop[], travelMin: number, dayStartMin = toMin(DEFAULT_DAY_START)) =>
+  stops.length === 0 ? dayStartMin : roundUpTo5(toMin(stops[stops.length - 1].end) + travelMin)
+
+export const TRANSIT_MODES: TransitMode[] = ['walk', 'metro', 'bus', 'tram', 'train', 'car']
+export const modeLabel = (m: TransitMode) => MODE_LABEL[m]
+
+/** Straight-line distance in km */
+export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(x))
+}
+
+/** Rough travel estimate between two places: walk when close, otherwise drive/ride. Editable by the user. */
+export function estimateTransit(a: { lat: number; lng: number }, b: { lat: number; lng: number }): Transit {
+  const km = distanceKm(a, b) * 1.3 // streets aren't straight lines
+  if (km <= 2.5) return { mode: 'walk', minutes: Math.max(5, roundUpTo5((km / 4.5) * 60)) } // up to ~30 min on foot
+  return { mode: 'car', minutes: Math.max(10, roundUpTo5((km / (km > 30 ? 60 : 22)) * 60 + 5)) }
+}
+
+/** Suggested visit length per kind of place, in minutes */
+export const DEFAULT_VISIT: Record<StopKind, number> = {
+  museum: 120,
+  heritage: 60,
+  view: 30,
+  nature: 60,
+  market: 60,
+  food: 75,
+  shopping: 90,
+}
 
 export const directionsUrl = (s: { lat: number; lng: number }) =>
   `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}&travelmode=walking`

@@ -10,6 +10,7 @@ import AddStop from './screens/AddStop'
 import NewTrip from './screens/NewTrip'
 import TripPlan from './screens/TripPlan'
 import NoTrip from './screens/NoTrip'
+import DayPlanner from './screens/DayPlanner'
 
 export default function App() {
   const route = useRoute()
@@ -29,6 +30,8 @@ export default function App() {
   switch (section) {
     case 'trip':
       return tripScreen(<TripScreen expanded={param === 'schedule'} />, param === 'schedule' ? 'schedule' : 'map')
+    case 'day':
+      return tripScreen(<DayPlanner key={param} dayId={param ?? ''} />, 'schedule')
     case 'plan':
       return tripScreen(<TripPlan key={state.trip.id} />)
     case 'budget':

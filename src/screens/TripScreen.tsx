@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Drawer } from 'vaul'
-import { ArrowRight, ClipboardList, Footprints, LocateFixed, Map as MapIcon, Navigation, Plus, Share2, UtensilsCrossed } from 'lucide-react'
+import { ArrowRight, ClipboardList, Footprints, ListPlus, LocateFixed, Map as MapIcon, Navigation, Plus, Share2, UtensilsCrossed } from 'lucide-react'
 import TripMap from '../components/TripMap'
 import Restaurants from '../components/Restaurants'
 import { nearbyRestaurantsUrl } from '../data/restaurants'
@@ -193,9 +193,18 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
                         {formatDayLong(day.date)} · {day.stops.length ? `${day.stops.length} עצירות` : 'עוד לא תוכנן'}
                       </span>
                     </div>
-                    <IconButton label="הצגה על המפה" onClick={() => changeSnap(PEEK)} variant="raised" className="text-accent">
-                      <MapIcon size={20} aria-hidden="true" />
-                    </IconButton>
+                    <div className="flex shrink-0 gap-2">
+                      <a
+                        href={href(`/day/${day.id}`)}
+                        className="flex h-11 items-center gap-1.5 rounded-tile bg-accent px-3 text-[14px] font-semibold text-on-accent"
+                      >
+                        <ListPlus size={18} aria-hidden="true" />
+                        תכנון היום
+                      </a>
+                      <IconButton label="הצגה על המפה" onClick={() => changeSnap(PEEK)} variant="raised" className="text-accent">
+                        <MapIcon size={20} aria-hidden="true" />
+                      </IconButton>
+                    </div>
                   </header>
                   <DayChips days={trip.days} activeId={day.id} onSelect={(id) => dispatch({ type: 'setDay', dayId: id })} />
                   <div className="pt-1">
@@ -248,7 +257,7 @@ function PeekContent({
 
       {!focus ? (
         <a
-          href={href(`/add/${day.id}`)}
+          href={href(`/day/${day.id}`)}
           className="flex items-center gap-3 rounded-[20px] border-[1.5px] border-dashed border-accent-2 bg-accent-2/6 p-4 text-accent-2"
         >
           <span className="flex size-12 shrink-0 items-center justify-center rounded-tile bg-accent-2/14">
@@ -274,7 +283,7 @@ function PeekContent({
       ) : (
         slot &&
         focus && (
-          <a href={href(`/add/${day.id}`)} className="flex min-h-12 items-center gap-3 px-1 text-accent-2">
+          <a href={href(`/day/${day.id}`)} className="flex min-h-12 items-center gap-3 px-1 text-accent-2">
             <span className="flex size-8 items-center justify-center rounded-full border-2 border-dashed border-accent-2">
               <Plus size={16} aria-hidden="true" />
             </span>

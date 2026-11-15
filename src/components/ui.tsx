@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import {
   Binoculars,
   Bus,
+  Car,
   CalendarDays,
   Check,
   Coffee,
@@ -11,6 +12,7 @@ import {
   Map as MapIcon,
   Palette,
   ShoppingBag,
+  Store,
   TrainFront,
   TrainFrontTunnel,
   TramFront,
@@ -32,7 +34,8 @@ export const KIND_ICON: Record<StopKind, LucideIcon> = {
   museum: Palette,
   view: Binoculars,
   nature: Trees,
-  market: ShoppingBag,
+  market: Store,
+  shopping: ShoppingBag,
 }
 
 export const MODE_ICON: Record<TransitMode, LucideIcon> = {
@@ -41,6 +44,7 @@ export const MODE_ICON: Record<TransitMode, LucideIcon> = {
   bus: Bus,
   metro: TrainFrontTunnel,
   train: TrainFront,
+  car: Car,
 }
 
 export function IconTile({ kind, size = 48 }: { kind: StopKind; size?: number }) {
