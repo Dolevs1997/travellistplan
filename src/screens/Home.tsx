@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { ArrowLeft, Bell, MapPin, Plus, Search } from 'lucide-react'
+import { ArrowLeft, Bell, Compass, MapPin, Plus, Search } from 'lucide-react'
 import DestinationsMap from '../components/DestinationsMap'
 import { BottomNav, Fab, IconButton, ScreenHeader, Tag, cx } from '../components/ui'
-import { otherTrips } from '../data/mockTrip'
-import { countdownLabel, daysUntil, tripRange, tripStats } from '../data/helpers'
-import { useTrip } from '../state/TripStore'
+import { countdownLabel, daysUntil, isoInDays, tripRange, tripStats } from '../data/helpers'
+import type { Trip } from '../data/types'
+import { isSampleTrip, useTrip } from '../state/TripStore'
 import { navigate } from '../router'
 
 const greeting = () => {
@@ -15,13 +15,22 @@ const greeting = () => {
   return 'לילה טוב'
 }
 
+const planned = (t: Trip) => !!t.destination && t.days.length > 0
+
+/** The user's next trip: the soonest upcoming one with a destination, else the latest past one */
+function nextTrip(trips: Trip[]) {
+  const today = isoInDays(0)
+  const withDest = trips.filter(planned)
+  const upcoming = withDest.filter((t) => t.days[t.days.length - 1].date >= today).sort((a, b) => a.days[0].date.localeCompare(b.days[0].date))
+  return upcoming[0] ?? withDest[withDest.length - 1] ?? null
+}
+
 export default function Home() {
   const { state, dispatch } = useTrip()
-  // The featured card shows the example trip (or the first trip that has a destination)
-  const trip = state.trips.find((t) => t.id === 'lisbon-porto') ?? state.trips.find((t) => t.destination && t.days.length) ?? state.trips[0]
-  const myTrips = state.trips.filter((t) => t.id !== trip.id)
-  const stats = tripStats(trip)
-  const hasMap = !!trip.destination && trip.days.length > 0
+  // Only the user's own trips: the bundled sample never shows here, and no city is shown before one is chosen
+  const own = state.trips.filter((t) => !isSampleTrip(t))
+  const trip = nextTrip(own)
+  const others = own.filter((t) => t.id !== trip?.id)
 
   const openTrip = (id: string) => {
     dispatch({ type: 'setActiveTrip', tripId: id })
@@ -31,9 +40,7 @@ export default function Home() {
     dispatch({ type: 'createTrip', id: `trip-${Date.now().toString(36)}` })
     navigate('/trip')
   }
-  const [query, setQuery] = useState('')
   const [notice, setNotice] = useState('')
-
   const flash = (msg: string) => {
     setNotice(msg)
     window.setTimeout(() => setNotice(''), 2200)
@@ -46,129 +53,58 @@ export default function Home() {
           eyebrow={greeting()}
           title="לאן הפעם?"
           action={
-            <IconButton label="התראות – יש חדשות" onClick={() => flash('אין התראות חדשות מלבד תזכורת: כרטיסים למגדל בלם')} className="relative">
+            <IconButton label="התראות" onClick={() => flash('אין התראות חדשות')}>
               <Bell size={20} aria-hidden="true" />
-              <span className="absolute top-2.5 left-[11px] size-2 rounded-full bg-accent-2 ring-2 ring-surface" />
             </IconButton>
           }
         />
 
-        <form
-          role="search"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (query.trim()) flash(`החיפוש של "${query.trim()}" יגיע בקרוב`)
-          }}
+        {/* Starts a new trip; the destination search lives on the new-trip page */}
+        <button
+          type="button"
+          onClick={newTrip}
+          className="flex h-[52px] items-center gap-2.5 rounded-2xl border border-border bg-surface px-4 text-start text-[15px] text-muted transition-colors duration-200 ease-out hover:border-border-strong"
         >
-          <label className="flex h-[52px] items-center gap-2.5 rounded-2xl border border-border bg-surface px-4 text-muted focus-within:border-accent">
-            <Search size={20} aria-hidden="true" />
-            <span className="sr-only">חיפוש יעד</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="חפשו עיר, מדינה או מקום"
-              className="min-w-0 flex-1 bg-transparent text-[15px] text-text outline-none placeholder:text-muted"
-            />
-          </label>
-        </form>
+          <Search size={20} aria-hidden="true" />
+          חפשו עיר, מדינה או אזור
+        </button>
 
-        <article className="overflow-hidden rounded-phone border border-border bg-surface">
-          {hasMap && (
-            <div className="relative">
-              <DestinationsMap trip={trip} />
-              <span className="absolute top-3 right-3 flex h-[30px] items-center gap-1.5 rounded-full border border-border bg-surface/92 px-3 text-xs font-medium">
-                <span className="size-1.5 rounded-full bg-accent" />
-                {countdownLabel(daysUntil(trip.days[0].date))}
-              </span>
-            </div>
-          )}
-          <div className="flex flex-col gap-4 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 flex-col gap-1">
-                <span className="text-[11px] font-medium text-muted">הטיול הבא</span>
-                <h2 className="text-[17px] font-semibold">{trip.name}</h2>
-                <span className="text-[13px] text-muted">
-                  {trip.days.length ? `${tripRange(trip)} · ${trip.days.length} ימים` : 'עוד לא נבחר יעד'}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => openTrip(trip.id)}
-                aria-label={`פתיחת הטיול ${trip.name}`}
-                className="flex size-11 shrink-0 items-center justify-center rounded-tile bg-accent text-on-accent transition-transform duration-200 ease-out hover:scale-105"
-              >
-                <ArrowLeft size={20} aria-hidden="true" />
-              </button>
-            </div>
-            <dl className="grid grid-cols-3 gap-2">
-              <Stat value={stats.stops} label="עצירות" />
-              <Stat value={stats.cities} label="ערים" />
-              <Stat value={stats.unplanned} label="ימים פנויים" orange />
-            </dl>
-          </div>
-        </article>
+        {trip ? <NextTripCard trip={trip} onOpen={() => openTrip(trip.id)} /> : <EmptyCard onNew={newTrip} />}
 
-        <section className="flex flex-col gap-3" aria-labelledby="other-trips">
-          <div className="flex items-center justify-between">
+        {others.length > 0 && (
+          <section className="flex flex-col gap-3" aria-labelledby="other-trips">
             <h2 id="other-trips" className="text-lg font-semibold">
-              טיולים נוספים
+              {trip ? 'טיולים נוספים' : 'טיוטות'}
             </h2>
-            <button type="button" onClick={() => flash('אין עוד טיולים מעבר לאלה')} className="flex min-h-11 items-center text-[13px] font-medium text-accent">
-              הכל
-            </button>
-          </div>
-          <ul className="flex flex-col gap-2">
-            {myTrips.map((t) => (
-              <li key={t.id}>
-                <button
-                  type="button"
-                  onClick={() => openTrip(t.id)}
-                  className="flex w-full items-center gap-3 rounded-card border border-border bg-surface p-2.5 text-start transition-colors duration-200 ease-out hover:border-border-strong"
-                >
-                  <span
-                    className={cx(
-                      'flex size-11 shrink-0 items-center justify-center rounded-tile',
-                      t.destination ? 'bg-water text-accent' : 'border-[1.5px] border-dashed border-accent-2 text-accent-2',
-                    )}
+            <ul className="flex flex-col gap-2">
+              {others.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onClick={() => openTrip(t.id)}
+                    className="flex w-full items-center gap-3 rounded-card border border-border bg-surface p-2.5 text-start transition-colors duration-200 ease-out hover:border-border-strong"
                   >
-                    <MapPin size={20} aria-hidden="true" />
-                  </span>
-                  <span className="flex flex-1 flex-col gap-0.5">
-                    <span className="text-base font-semibold">{t.name}</span>
-                    <span className={cx('text-[13px]', t.destination ? 'text-muted' : 'text-accent-2')}>
-                      {t.destination ? `${t.destination.country} · ${t.days.length} ימים` : 'עוד לא נבחר יעד'}
+                    <span
+                      className={cx(
+                        'flex size-11 shrink-0 items-center justify-center rounded-tile',
+                        t.destination ? 'bg-water text-accent' : 'border-[1.5px] border-dashed border-accent-2 text-accent-2',
+                      )}
+                    >
+                      <MapPin size={20} aria-hidden="true" />
                     </span>
-                  </span>
-                  <Tag tone="muted">טיוטה</Tag>
-                </button>
-              </li>
-            ))}
-            {otherTrips.map((t) => (
-              <li key={t.id}>
-                <button
-                  type="button"
-                  onClick={() => flash(`${t.name} עדיין בטיוטה`)}
-                  className="flex w-full items-center gap-3 rounded-card border border-border bg-surface p-2.5 text-start transition-colors duration-200 ease-out hover:border-border-strong"
-                >
-                  <span
-                    className={cx(
-                      'flex size-11 shrink-0 items-center justify-center rounded-tile',
-                      t.tile === 'water' ? 'bg-water text-accent' : 'bg-park text-[#7FD9A8]',
-                    )}
-                  >
-                    <MapPin size={20} aria-hidden="true" />
-                  </span>
-                  <span className="flex flex-1 flex-col gap-0.5">
-                    <span className="text-base font-semibold">{t.name}</span>
-                    <span className="text-[13px] text-muted">{t.meta}</span>
-                  </span>
-                  <Tag tone="muted">{t.status}</Tag>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+                    <span className="flex flex-1 flex-col gap-0.5">
+                      <span className="text-base font-semibold">{t.name}</span>
+                      <span className={cx('text-[13px]', t.destination ? 'text-muted' : 'text-accent-2')}>
+                        {planned(t) ? `${tripRange(t)} · ${t.days.length} ימים` : 'עוד לא נבחר יעד'}
+                      </span>
+                    </span>
+                    {!t.destination && <Tag tone="muted">טיוטה</Tag>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-[176px] z-40 flex justify-center px-6">
@@ -180,6 +116,64 @@ export default function Home() {
       </Fab>
       <BottomNav active="home" />
     </div>
+  )
+}
+
+function NextTripCard({ trip, onOpen }: { trip: Trip; onOpen: () => void }) {
+  const stats = tripStats(trip)
+  return (
+    <article className="overflow-hidden rounded-phone border border-border bg-surface">
+      <div className="relative">
+        <DestinationsMap trip={trip} />
+        <span className="absolute top-3 right-3 flex h-[30px] items-center gap-1.5 rounded-full border border-border bg-surface/92 px-3 text-xs font-medium">
+          <span className="size-1.5 rounded-full bg-accent" />
+          {countdownLabel(daysUntil(trip.days[0].date))}
+        </span>
+      </div>
+      <div className="flex flex-col gap-4 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-[11px] font-medium text-muted">הטיול הבא</span>
+            <h2 className="text-[17px] font-semibold">{trip.name}</h2>
+            <span className="text-[13px] text-muted">
+              {tripRange(trip)} · {trip.days.length} ימים
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={`פתיחת הטיול ${trip.name}`}
+            className="flex size-11 shrink-0 items-center justify-center rounded-tile bg-accent text-on-accent transition-transform duration-200 ease-out hover:scale-105"
+          >
+            <ArrowLeft size={20} aria-hidden="true" />
+          </button>
+        </div>
+        <dl className="grid grid-cols-3 gap-2">
+          <Stat value={stats.stops} label="עצירות" />
+          <Stat value={stats.cities} label="ערים" />
+          <Stat value={stats.unplanned} label="ימים פנויים" orange />
+        </dl>
+      </div>
+    </article>
+  )
+}
+
+/** No destination chosen yet: no city, no map, just an invitation to plan */
+function EmptyCard({ onNew }: { onNew: () => void }) {
+  return (
+    <article className="flex flex-col items-center gap-4 rounded-phone border border-dashed border-border-strong bg-surface px-6 py-9 text-center">
+      <span className="flex size-14 items-center justify-center rounded-full bg-water text-accent" aria-hidden="true">
+        <Compass size={26} />
+      </span>
+      <div className="flex flex-col gap-1.5">
+        <h2 className="text-[17px] font-semibold">עוד לא נבחר יעד</h2>
+        <p className="max-w-[280px] text-[14px] leading-relaxed text-muted">בחרו לאן נוסעים ומתי, והטיול הבא שלכם יופיע כאן עם מפה וספירה לאחור.</p>
+      </div>
+      <button type="button" onClick={onNew} className="flex h-12 items-center gap-2 rounded-tile bg-accent px-5 text-[15px] font-semibold text-on-accent">
+        <Plus size={18} aria-hidden="true" />
+        תכנון טיול חדש
+      </button>
+    </article>
   )
 }
 

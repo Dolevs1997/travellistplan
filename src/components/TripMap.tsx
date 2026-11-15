@@ -3,40 +3,16 @@ import { AttributionControl, LngLatBounds, Map as MLMap, Marker, type GeoJSONSou
 import type { Day, Trip } from '../data/types'
 import { freeSlot, isPastDay, stopStatus } from '../data/helpers'
 import { prefersReducedMotion } from '../router'
-import { STYLE_URL } from '../maplibreSetup'
-
-const C = {
-  mapBg: '#11151C',
-  water: '#0E2633',
-  park: '#13261F',
-  building: '#161B23',
-  accent: '#2EE6C5',
-  accent2: '#FF9F43',
-}
+import { applyMapTheme, currentStyleUrl } from '../maplibreSetup'
+import { mapColors, useTheme } from '../theme'
 
 const PLUS_SVG =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>'
 
-/** Bring the base style in line with the app's color tokens. */
-function recolor(map: MLMap) {
-  for (const layer of map.getStyle().layers ?? []) {
-    const id = layer.id.toLowerCase()
-    try {
-      if (layer.type === 'background') map.setPaintProperty(layer.id, 'background-color', C.mapBg)
-      else if (layer.type === 'fill') {
-        if (id.includes('water')) map.setPaintProperty(layer.id, 'fill-color', C.water)
-        else if (/park|wood|grass|forest|landcover|nature|cemetery/.test(id)) map.setPaintProperty(layer.id, 'fill-color', C.park)
-        else if (id.includes('building')) map.setPaintProperty(layer.id, 'fill-color', C.building)
-      } else if (layer.type === 'line' && id.includes('water')) map.setPaintProperty(layer.id, 'line-color', C.water)
-    } catch {
-      /* some layers use expressions we don't need to override */
-    }
-  }
-}
-
 const emptyFC = (): GeoJSON.FeatureCollection => ({ type: 'FeatureCollection', features: [] })
 
 function addOverlayLayers(map: MLMap) {
+  const C = mapColors()
   map.addSource('route', { type: 'geojson', data: emptyFC() })
   map.addSource('detour', { type: 'geojson', data: emptyFC() })
   map.addLayer({
@@ -80,6 +56,7 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
   const markers = useRef<Marker[]>([])
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState(false)
+  const theme = useTheme()
 
   // Keep latest callbacks without re-creating markers on every render
   const cb = useRef({ onSelectStop, onSuggestion })
@@ -88,14 +65,14 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
   const padding = () => ({ top: 96, bottom: bottomPadding + 32, left: 48, right: 48 })
   const duration = () => (prefersReducedMotion() ? 0 : 250)
 
-  // Create the map once
+  // Create the map (again when the light/dark theme changes)
   useEffect(() => {
     if (!container.current) return
     let map: MLMap
     try {
       map = new MLMap({
         container: container.current,
-        style: STYLE_URL,
+        style: currentStyleUrl(),
         // Start on the trip's destination; never on a city the user hasn't chosen
         center: trip.destination ? [trip.destination.lng, trip.destination.lat] : [12, 28],
         zoom: trip.destination?.zoom ?? 1.2,
@@ -110,7 +87,7 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
     map.touchZoomRotate.disableRotation()
     map.addControl(new AttributionControl({ compact: true }), 'top-left')
     map.on('load', () => {
-      recolor(map)
+      applyMapTheme(map)
       addOverlayLayers(map)
       setReady(true)
     })
@@ -126,7 +103,8 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
       mapRef.current = null
       setReady(false)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme])
 
   const showSuggestions = !isPastDay(trip, day.id) && freeSlot(day) !== null
 

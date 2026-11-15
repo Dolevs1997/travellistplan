@@ -138,8 +138,8 @@ function SortableStop({
           className={cx(
             'flex items-center gap-1 rounded-card border bg-raised ps-3.5 pe-1 transition-[border-color,box-shadow] duration-200 ease-out',
             status === 'current' ? 'border-accent' : 'border-border',
-            selected && 'shadow-[0_0_0_2px_rgba(46,230,197,0.45)]',
-            isDragging && 'shadow-[0_16px_32px_rgba(0,0,0,0.5)]',
+            selected && 'shadow-[0_0_0_2px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]',
+            isDragging && 'shadow-[0_16px_32px_rgba(0,0,0,0.25)]',
           )}
         >
           <button

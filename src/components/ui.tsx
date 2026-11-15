@@ -50,7 +50,7 @@ export function IconTile({ kind, size = 48 }: { kind: StopKind; size?: number })
     <span
       className={cx(
         'flex shrink-0 items-center justify-center rounded-tile',
-        park ? 'bg-park text-[#7FD9A8]' : 'bg-water text-accent',
+        park ? 'bg-park text-park-ink' : 'bg-water text-accent',
       )}
       style={{ width: size, height: size }}
       aria-hidden="true"
@@ -162,7 +162,7 @@ export function StopNode({ status, n }: { status: StopStatus; n: number }) {
     )
   if (status === 'current')
     return (
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-on-accent shadow-[0_0_0_5px_rgba(46,230,197,0.22)]">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-on-accent shadow-[0_0_0_5px_var(--halo-accent)]">
         {n}
       </span>
     )

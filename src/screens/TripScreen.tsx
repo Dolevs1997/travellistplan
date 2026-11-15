@@ -126,7 +126,7 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
         aria-label="המיקום שלי"
         onClick={() => setRecenterKey((k) => k + 1)}
         className={cx(
-          'absolute z-10 flex size-12 items-center justify-center rounded-full border border-border bg-surface text-accent shadow-[0_8px_20px_rgba(0,0,0,0.4)] transition-opacity duration-200 ease-out',
+          'absolute z-10 flex size-12 items-center justify-center rounded-full border border-border bg-surface text-accent shadow-[var(--float-shadow)] transition-opacity duration-200 ease-out',
           atPeek ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
         style={{ bottom: PEEK_PX + 16, insetInlineEnd: 16 }}
@@ -140,7 +140,7 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
         disabled={locating}
         aria-label="מסעדות לידי – נפתח בגוגל מפות בכרטיסייה חדשה"
         className={cx(
-          'absolute z-10 flex h-12 items-center gap-2 rounded-full border border-border bg-surface px-4 text-sm font-medium text-text shadow-[0_8px_20px_rgba(0,0,0,0.4)] transition-opacity duration-200 ease-out disabled:opacity-60',
+          'absolute z-10 flex h-12 items-center gap-2 rounded-full border border-border bg-surface px-4 text-sm font-medium text-text shadow-[var(--float-shadow)] transition-opacity duration-200 ease-out disabled:opacity-60',
           atPeek ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
         style={{ bottom: PEEK_PX + 16, insetInlineStart: 16 }}

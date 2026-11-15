@@ -3,7 +3,8 @@ import { Map as MLMap, Marker } from 'maplibre-gl'
 import { Minus, Plus } from 'lucide-react'
 import { prefersReducedMotion } from '../router'
 import type { Trip } from '../data/types'
-import { STYLE_URL } from '../maplibreSetup'
+import { applyMapTheme, currentStyleUrl } from '../maplibreSetup'
+import { cssVar, useTheme } from '../theme'
 
 interface Place {
   name: string
@@ -29,7 +30,7 @@ export function tripDestinations(trip: Trip): Place[] {
 }
 
 const PIN_SVG =
-  '<svg width="22" height="28" viewBox="0 0 30 38" aria-hidden="true"><path d="M15 37C15 37 28 23.5 28 14A13 13 0 0 0 2 14C2 23.5 15 37 15 37Z" fill="#2EE6C5" stroke="#0B0E13" stroke-width="2"/><circle cx="15" cy="14" r="5" fill="#06201B"/></svg>'
+  '<svg width="22" height="28" viewBox="0 0 30 38" aria-hidden="true"><path d="M15 37C15 37 28 23.5 28 14A13 13 0 0 0 2 14C2 23.5 15 37 15 37Z" class="dest-pin__body" stroke-width="2"/><circle class="dest-pin__dot" cx="15" cy="14" r="5"/></svg>'
 
 /** Pins closer than this on screen are shown as one pin carrying all their names. */
 const MERGE_PX = 30
@@ -60,6 +61,7 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
   const [zoom, setZoom] = useState({ atMin: true, atMax: false })
   const places = useMemo(() => tripDestinations(trip), [trip])
   const key = places.map((p) => `${p.name}:${p.lat.toFixed(3)},${p.lng.toFixed(3)}`).join('|')
+  const theme = useTheme()
 
   useEffect(() => {
     const el = ref.current
@@ -74,7 +76,7 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
     try {
       map = new MLMap({
         container: el,
-        style: STYLE_URL,
+        style: currentStyleUrl(),
         center: [centerLng, Math.max(-50, Math.min(60, centerLat))],
         zoom: worldZoom,
         minZoom: worldZoom,
@@ -93,27 +95,15 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
     map.touchZoomRotate.disableRotation()
 
     // Keep the credits collapsed to the ⓘ button so they don't cover the pins
-    map.once('load', () => {
+    // (MapLibre may re-open it after load, so collapse again once the first render settles)
+    const collapseCredits = () =>
       el.querySelectorAll('.maplibregl-compact-show').forEach((n) => n.classList.remove('maplibregl-compact-show'))
-    })
+    map.once('load', collapseCredits)
+    map.once('idle', collapseCredits)
 
     map.once('style.load', () => {
-      for (const layer of map.getStyle().layers ?? []) {
-        const id = layer.id.toLowerCase()
-        try {
-          // Keep continent and country names for context; our pins carry the city names
-          if (layer.type === 'symbol') {
-            if (id.startsWith('place_country') || id.startsWith('place_continent')) map.setPaintProperty(layer.id, 'text-color', '#8C97A8')
-            else map.setLayoutProperty(layer.id, 'visibility', 'none')
-          } else if (layer.type === 'line' && id.startsWith('boundary_country')) {
-            map.setPaintProperty(layer.id, 'line-color', '#4A5568')
-          } else if (layer.type === 'background') map.setPaintProperty(layer.id, 'background-color', '#11151C')
-          else if (layer.type === 'fill' && id.includes('water')) map.setPaintProperty(layer.id, 'fill-color', '#0E2633')
-          else if (layer.type === 'fill' && /park|wood|grass|forest|landcover/.test(id)) map.setPaintProperty(layer.id, 'fill-color', '#13261F')
-        } catch {
-          /* ignore */
-        }
-      }
+      // Keep continent and country names for context; our pins carry the city names
+      applyMapTheme(map, 'countries')
       if (places.length > 1) {
         map.addSource('trip-line', {
           type: 'geojson',
@@ -124,7 +114,7 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
           type: 'line',
           source: 'trip-line',
           layout: { 'line-cap': 'round' },
-          paint: { 'line-color': '#2EE6C5', 'line-width': 2.5, 'line-opacity': 0.7, 'line-dasharray': [1, 2] },
+          paint: { 'line-color': cssVar('--color-accent'), 'line-width': 2.5, 'line-opacity': 0.7, 'line-dasharray': [1, 2] },
         })
       }
     })
@@ -159,7 +149,7 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
       mapRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, theme])
 
   const label = places.length ? `מפת העולם עם היעדים: ${places.map((p) => p.name).join(', ')}. אפשר לגרור ולהגדיל.` : 'מפת הטיול'
   const zoomBy = (delta: number) => {
@@ -175,7 +165,7 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
       {/* maplibre-gl.css forces position:relative on the container, so size it explicitly */}
       <div ref={ref} className="h-full w-full" />
       {places.length > 0 && (
-        <div className="absolute top-3 left-3 z-10 flex flex-col overflow-hidden rounded-tile border border-border shadow-[0_6px_16px_rgba(0,0,0,0.4)]">
+        <div className="absolute top-3 left-3 z-10 flex flex-col overflow-hidden rounded-tile border border-border shadow-[var(--float-shadow)]">
           <button type="button" aria-label="הגדלת המפה" disabled={zoom.atMax} onClick={() => zoomBy(1)} className={`${btn} border-b border-border`}>
             <Plus size={18} aria-hidden="true" />
           </button>

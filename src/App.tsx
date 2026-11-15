@@ -9,6 +9,7 @@ import PlaceDetail from './screens/PlaceDetail'
 import AddStop from './screens/AddStop'
 import NewTrip from './screens/NewTrip'
 import TripPlan from './screens/TripPlan'
+import NoTrip from './screens/NoTrip'
 
 export default function App() {
   const route = useRoute()
@@ -20,16 +21,18 @@ export default function App() {
     window.scrollTo(0, 0)
   }, [route])
 
-  // Any trip screen for a trip without a destination goes to the new-trip setup
-  const tripScreen = (screen: React.ReactNode) => (hasDestination ? screen : <NewTrip key={state.trip.id} />)
+  // No trip open: show an empty state, never a default city.
+  // An open trip without a destination goes to the new-trip setup.
+  const tripScreen = (screen: React.ReactNode, tab: 'map' | 'schedule' = 'map') =>
+    !state.hasActiveTrip ? <NoTrip tab={tab} /> : hasDestination ? screen : <NewTrip key={state.trip.id} />
 
   switch (section) {
     case 'trip':
-      return tripScreen(<TripScreen expanded={param === 'schedule'} />)
+      return tripScreen(<TripScreen expanded={param === 'schedule'} />, param === 'schedule' ? 'schedule' : 'map')
     case 'plan':
       return tripScreen(<TripPlan key={state.trip.id} />)
     case 'budget':
-      return <Budget />
+      return state.hasActiveTrip ? <Budget /> : <NoTrip tab="budget" />
     case 'profile':
       return <Profile />
     case 'place':

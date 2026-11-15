@@ -6,7 +6,9 @@ import type { Activity, Day, Destination, Lodging, SavedRestaurant, Stop, Trip, 
 
 /** What screens read: the active trip plus UI state */
 export interface State {
+  /** The open trip. When `hasActiveTrip` is false this is an empty placeholder: screens must not show it */
   trip: Trip
+  hasActiveTrip: boolean
   trips: Trip[]
   activeDayId: string
   selectedStopId: string | null
@@ -39,15 +41,22 @@ export type Action =
   | { type: 'deleteTrip'; tripId: string }
   | { type: 'reset' }
 
-const STORAGE_KEY = 'trip-planner:v2'
+const STORAGE_KEY = 'trip-planner:v3'
+const V2_KEY = 'trip-planner:v2'
 const LEGACY_KEY = 'trip-planner:v1'
 
+/** The bundled Lisbon & Porto trip is a sample: never opened or shown on Home by default */
+export const isSampleTrip = (t: Trip) => t.id === mockTrip.id
+
+/** Nothing is open until the user creates a trip (or opens the sample from Profile) */
 const initialStore = (): Store => ({
   trips: [structuredClone(mockTrip)],
-  activeTripId: mockTrip.id,
-  activeDayId: mockTrip.progress!.dayId,
+  activeTripId: '',
+  activeDayId: '',
   selectedStopId: null,
 })
+
+const firstOwnTrip = (trips: Trip[]) => trips.find((t) => !isSampleTrip(t))
 
 function load(): Store {
   try {
@@ -56,17 +65,27 @@ function load(): Store {
       const parsed = JSON.parse(raw) as Omit<Store, 'selectedStopId'>
       if (parsed?.trips?.length) return { ...parsed, selectedStopId: null }
     }
-    // Earlier versions stored a single trip
+    // v2 opened the sample trip by default: keep the user's trips, but don't leave the sample open
+    const v2 = localStorage.getItem(V2_KEY)
+    if (v2) {
+      const parsed = JSON.parse(v2) as Omit<Store, 'selectedStopId'>
+      if (parsed?.trips?.length) {
+        const active = parsed.trips.find((t) => t.id === parsed.activeTripId)
+        if (active && !isSampleTrip(active)) return { ...parsed, selectedStopId: null }
+        const own = firstOwnTrip(parsed.trips)
+        return { trips: parsed.trips, activeTripId: own?.id ?? '', activeDayId: own?.days[0]?.id ?? '', selectedStopId: null }
+      }
+    }
+    // v1 stored a single trip
     const legacy = localStorage.getItem(LEGACY_KEY)
     if (legacy) {
       const old = JSON.parse(legacy) as { trip: Trip; activeDayId: string }
-      if (old?.trip?.days?.length) {
-        const trip = { ...old.trip, destination: old.trip.destination ?? mockTrip.destination }
-        return { trips: [trip], activeTripId: trip.id, activeDayId: old.activeDayId, selectedStopId: null }
+      if (old?.trip?.days?.length && !isSampleTrip(old.trip)) {
+        return { trips: [structuredClone(mockTrip), old.trip], activeTripId: old.trip.id, activeDayId: old.activeDayId, selectedStopId: null }
       }
     }
   } catch {
-    /* storage unavailable – fall back to mock data */
+    /* storage unavailable – start fresh */
   }
   return initialStore()
 }
@@ -75,6 +94,9 @@ const newBudget = (): Trip['budget'] => ({
   currency: 'EUR',
   categories: mockTrip.budget.categories.map((c) => ({ ...c, spent: 0, planned: 0 })),
 })
+
+/** Placeholder when no trip is open; App never renders trip screens for it */
+const NO_TRIP: Trip = { id: '', name: '', destination: null, days: [], budget: newBudget() }
 
 /**
  * Rebuild a trip's days for a new date range. Days whose date is still in range keep their
@@ -220,13 +242,19 @@ function reducer(store: Store, action: Action): Store {
       const trips = store.trips.filter((t) => t.id !== action.tripId)
       if (trips.length === 0) return initialStore()
       if (store.activeTripId !== action.tripId) return { ...store, trips }
-      const first = trips[0]
-      return { trips, activeTripId: first.id, activeDayId: first.progress?.dayId ?? first.days[0]?.id ?? '', selectedStopId: null }
+      // Fall back to another of the user's own trips, never to the sample
+      const own = firstOwnTrip(trips)
+      return { trips, activeTripId: own?.id ?? '', activeDayId: own?.progress?.dayId ?? own?.days[0]?.id ?? '', selectedStopId: null }
     }
-    case 'reset':
-      return initialStore()
+    case 'reset': {
+      // Restore only the sample trip; the user's own trips stay
+      const trips = [structuredClone(mockTrip), ...store.trips.filter((t) => !isSampleTrip(t))]
+      if (store.activeTripId === mockTrip.id) return { ...store, trips, activeDayId: mockTrip.progress!.dayId, selectedStopId: null }
+      return { ...store, trips }
+    }
     default: {
-      const active = store.trips.find((t) => t.id === store.activeTripId) ?? store.trips[0]
+      const active = store.trips.find((t) => t.id === store.activeTripId)
+      if (!active) return store // no trip open: trip actions do nothing
       const res = tripReducer(active, action)
       if (res.trip === active) return store
       const next: Store = { ...store, trips: store.trips.map((t) => (t.id === active.id ? res.trip : t)) }
@@ -256,15 +284,16 @@ export function TripProvider({ children }: { children: ReactNode }) {
     }
   }, [store])
 
-  const state = useMemo<State>(
-    () => ({
-      trip: store.trips.find((t) => t.id === store.activeTripId) ?? store.trips[0],
+  const state = useMemo<State>(() => {
+    const active = store.trips.find((t) => t.id === store.activeTripId)
+    return {
+      trip: active ?? NO_TRIP,
+      hasActiveTrip: !!active,
       trips: store.trips,
       activeDayId: store.activeDayId,
       selectedStopId: store.selectedStopId,
-    }),
-    [store],
-  )
+    }
+  }, [store])
 
   return <Ctx.Provider value={{ state, dispatch }}>{children}</Ctx.Provider>
 }

@@ -1,8 +1,56 @@
 @import "tailwindcss";
 
+/* Light theme is the default. Utilities read these through var(), so the
+   [data-theme="dark"] block below re-themes the whole app. */
 @theme {
   --font-sans: "Rubik", system-ui, sans-serif;
 
+  --color-bg: #F4F6F9;
+  --color-map-bg: #E8EDF2;
+  --color-surface: #FFFFFF;
+  --color-raised: #F0F3F7;
+  --color-border: #DDE3EA;
+  --color-border-strong: #C3CCD7;
+  --color-handle: #C3CCD7;
+  --color-text: #111827;
+  --color-muted: #586374;
+  --color-accent: #0B7F6D;
+  --color-on-accent: #FFFFFF;
+  --color-accent-2: #B45309;
+  --color-on-accent-2: #FFFFFF;
+  --color-water: #E0EEF6;
+  --color-park: #E1F2E7;
+  --color-park-ink: #2F7D4F;
+
+  --radius-tile: 14px;
+  --radius-card: 18px;
+  --radius-phone: 24px;
+  --radius-sheet: 28px;
+
+  --shadow-fab: 0 10px 30px var(--glow-accent);
+  --shadow-sheet: var(--sheet-shadow);
+}
+
+:root {
+  color-scheme: light;
+  --glow-accent: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  --halo-accent: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  --halo-accent-soft: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --halo-accent-2: color-mix(in srgb, var(--color-accent-2) 20%, transparent);
+  --sheet-shadow: 0 -12px 32px rgba(15, 23, 42, 0.12);
+  --float-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
+
+  /* Map colors (read by MapLibre code via src/theme.ts) */
+  --map-bg: #EEF2F6;
+  --map-water: #C9DFEC;
+  --map-park: #D6EBDD;
+  --map-building: #E2E6EC;
+  --map-boundary: #A0AEC0;
+  --map-label: #5B6675;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
   --color-bg: #0B0E13;
   --color-map-bg: #11151C;
   --color-surface: #151A22;
@@ -18,14 +66,17 @@
   --color-on-accent-2: #2A1606;
   --color-water: #0E2633;
   --color-park: #13261F;
+  --color-park-ink: #7FD9A8;
 
-  --radius-tile: 14px;
-  --radius-card: 18px;
-  --radius-phone: 24px;
-  --radius-sheet: 28px;
+  --sheet-shadow: 0 -20px 40px rgba(0, 0, 0, 0.45);
+  --float-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 
-  --shadow-fab: 0 10px 30px rgba(46, 230, 197, 0.3);
-  --shadow-sheet: 0 -20px 40px rgba(0, 0, 0, 0.45);
+  --map-bg: #11151C;
+  --map-water: #0E2633;
+  --map-park: #13261F;
+  --map-building: #161B23;
+  --map-boundary: #4A5568;
+  --map-label: #8C97A8;
 }
 
 @layer base {
@@ -76,15 +127,15 @@
 .pin--done {
   background: var(--color-accent);
   color: var(--color-on-accent);
-  box-shadow: 0 0 0 6px rgba(46, 230, 197, 0.2);
+  box-shadow: 0 0 0 6px var(--halo-accent);
 }
 .pin--current {
   width: 34px;
   height: 34px;
   background: var(--color-accent);
   color: var(--color-on-accent);
-  border: 2px solid var(--color-bg);
-  box-shadow: 0 0 0 7px rgba(46, 230, 197, 0.25), 0 0 0 15px rgba(46, 230, 197, 0.1);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 0 0 7px var(--halo-accent), 0 0 0 15px var(--halo-accent-soft);
 }
 .pin--upcoming {
   background: var(--color-surface);
@@ -95,7 +146,7 @@
 .pin--suggestion {
   background: var(--color-accent-2);
   color: var(--color-on-accent-2);
-  box-shadow: 0 0 0 6px rgba(255, 159, 67, 0.2);
+  box-shadow: 0 0 0 6px var(--halo-accent-2);
 }
 .pin--selected {
   transform: scale(1.2);
@@ -119,6 +170,7 @@
   padding: 7px 10px;
   border-radius: 999px;
   pointer-events: none;
+  box-shadow: var(--float-shadow);
 }
 
 /* Destination pins on the Home card. No `position` on the marker element itself:
@@ -127,7 +179,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.3));
+}
+.dest-pin__body {
+  fill: var(--color-accent);
+  stroke: var(--color-surface);
+}
+.dest-pin__dot {
+  fill: var(--color-on-accent);
 }
 /* Label sits beside the pin (not above it) so nearby cities don't overlap */
 .dest-pin__label {
@@ -148,7 +207,7 @@
   top: 68px;
 }
 .maplibregl-ctrl-attrib.maplibregl-compact {
-  background: rgba(21, 26, 34, 0.9) !important;
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent) !important;
   color: var(--color-muted);
 }
 .maplibregl-ctrl-attrib a {

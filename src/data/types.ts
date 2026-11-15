@@ -111,10 +111,3 @@ export interface Trip {
   budget: { currency: 'EUR'; categories: BudgetCategory[] }
 }
 
-export interface TripSummary {
-  id: string
-  name: string
-  meta: string
-  status: string
-  tile: 'water' | 'park'
-}

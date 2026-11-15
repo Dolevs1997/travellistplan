@@ -1,4 +1,4 @@
-import type { Trip, TripSummary } from './types'
+import type { Trip } from './types'
 
 export const mockTrip: Trip = {
   id: 'lisbon-porto',
@@ -119,7 +119,3 @@ export const mockTrip: Trip = {
   ],
 }
 
-export const otherTrips: TripSummary[] = [
-  { id: 'tokyo', name: 'טוקיו וקיוטו', meta: 'אפריל 2027 · 10 ימים', status: 'טיוטה', tile: 'water' },
-  { id: 'crete', name: 'כרתים', meta: 'יוני 2027 · 6 ימים', status: 'טיוטה', tile: 'park' },
-]

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Map as MLMap } from 'maplibre-gl'
-import { STYLE_URL } from '../maplibreSetup'
+import { applyMapTheme, currentStyleUrl } from '../maplibreSetup'
+import { useTheme } from '../theme'
 
 /**
  * Zoomed-out world map with every label hidden, for a trip that has no
@@ -8,6 +9,7 @@ import { STYLE_URL } from '../maplibreSetup'
  */
 export default function BlankMap() {
   const ref = useRef<HTMLDivElement>(null)
+  const theme = useTheme()
 
   useEffect(() => {
     if (!ref.current) return
@@ -15,7 +17,7 @@ export default function BlankMap() {
     try {
       map = new MLMap({
         container: ref.current,
-        style: STYLE_URL,
+        style: currentStyleUrl(),
         center: [12, 28],
         zoom: 1.2,
         interactive: false,
@@ -24,19 +26,9 @@ export default function BlankMap() {
     } catch {
       return
     }
-    map.once('style.load', () => {
-      for (const layer of map.getStyle().layers ?? []) {
-        try {
-          if (layer.type === 'symbol') map.setLayoutProperty(layer.id, 'visibility', 'none')
-          else if (layer.type === 'background') map.setPaintProperty(layer.id, 'background-color', '#11151C')
-          else if (layer.type === 'fill' && layer.id.toLowerCase().includes('water')) map.setPaintProperty(layer.id, 'fill-color', '#0E2633')
-        } catch {
-          /* ignore layers we can't restyle */
-        }
-      }
-    })
+    map.once('style.load', () => applyMapTheme(map, 'none'))
     return () => map.remove()
-  }, [])
+  }, [theme])
 
   // maplibre-gl.css forces position:relative on the container, so size it explicitly
   return <div ref={ref} className="h-full w-full bg-map-bg" aria-hidden="true" />
