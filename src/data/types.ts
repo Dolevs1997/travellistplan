@@ -6,11 +6,14 @@ export type TransitMode = 'walk' | 'tram' | 'bus' | 'metro' | 'train' | 'car'
  * a Google Places id can be added later as another source).
  */
 export interface PlaceInfo {
-  source: 'wikidata' | 'osm'
+  /** 'ai': added by the chat assistant after the user approved it */
+  source: 'wikidata' | 'osm' | 'ai'
   /** Wikidata id (Q…) or OSM id ("node/123") */
   ref: string
   name: string
   kind: StopKind
+  /** Every category the place fits (a market hall is a market and a mall); `kind` is the main one */
+  kinds?: StopKind[]
   lat: number
   lng: number
   /** Short line like "מוזיאון לאמנות ברומא" */

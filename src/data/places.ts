@@ -15,7 +15,11 @@ const PHOTON = 'https://photon.komoot.io/api/'
 
 export type CategoryId = 'all' | StopKind
 
-/** Wikidata classes (P31 "instance of") per category */
+/**
+ * Wikidata classes (P31 "instance of") per category. A class may sit in several categories
+ * (a market hall is both a market and a mall, a square is heritage and a famous street),
+ * so the place shows up under each of them.
+ */
 const CLASSES: Record<StopKind, string[]> = {
   museum: ['Q33506', 'Q207694', 'Q1007870', 'Q17431399', 'Q2772772', 'Q1595639', 'Q3329412', 'Q2087181', 'Q588140'],
   heritage: [
@@ -23,13 +27,15 @@ const CLASSES: Record<StopKind, string[]> = {
     'Q839954', 'Q570116', 'Q174782', 'Q483453', 'Q12518', 'Q12280', 'Q24354', 'Q57821', 'Q170980', 'Q179700',
     'Q1081138', 'Q15243209', 'Q2319498',
   ],
-  nature: ['Q22698', 'Q1107656', 'Q167346', 'Q8502', 'Q23397', 'Q35509', 'Q34038', 'Q46169', 'Q473972', 'Q43501', 'Q2281788', 'Q4421'],
+  nature: ['Q14713846', 'Q22698', 'Q1107656', 'Q167346', 'Q8502', 'Q23397', 'Q35509', 'Q34038', 'Q46169', 'Q473972', 'Q43501', 'Q2281788', 'Q4421'],
   beach: ['Q40080', 'Q14713846'], // beach, river beach
   view: ['Q1440300', 'Q6017969', 'Q54050'],
-  market: ['Q330284', 'Q37654', 'Q132510', 'Q1047669'],
-  shopping: ['Q11315', 'Q216107', 'Q13226383', 'Q1758434'],
+  // marketplace, market (2), market hall, bazaar
+  market: ['Q330284', 'Q37654', 'Q132510', 'Q2080521', 'Q219760'],
+  // shopping center, shopping mall, outlet mall, department store, shopping arcade; also market halls, bazaars, shopping streets
+  shopping: ['Q11315', 'Q31374404', 'Q54927709', 'Q216107', 'Q97495053', 'Q2080521', 'Q219760', 'Q21000333'],
   // street, boulevard, avenue (2 classes), pedestrian street, promenade, shopping street
-  street: ['Q79007', 'Q54114', 'Q7543083', 'Q207934', 'Q62685721', 'Q787113', 'Q21000333'],
+  street: ['Q79007', 'Q54114', 'Q7543083', 'Q207934', 'Q62685721', 'Q787113', 'Q21000333', 'Q174782'],
   food: ['Q11707', 'Q30022', 'Q187456', 'Q131734', 'Q274393', 'Q1310145'],
 }
 
@@ -42,7 +48,7 @@ export const CATEGORIES: { id: CategoryId; label: string }[] = [
   { id: 'market', label: 'שווקים' },
   { id: 'nature', label: 'טבע' },
   { id: 'view', label: 'תצפיות' },
-  { id: 'shopping', label: 'קניות' },
+  { id: 'shopping', label: 'קניונים' },
   { id: 'street', label: 'רחובות ושדרות' },
 ]
 
@@ -54,12 +60,15 @@ export const KIND_LABEL: Record<StopKind, string> = {
   nature: 'טבע',
   beach: 'חוף',
   view: 'תצפית',
-  shopping: 'קניות',
+  shopping: 'קניון',
   street: 'רחוב ושדרה',
 }
 
-const classToKind = new Map<string, StopKind>()
-;(Object.keys(CLASSES) as StopKind[]).forEach((k) => CLASSES[k].forEach((q) => classToKind.set(q, k)))
+/** Class -> every category it belongs to, in CLASSES order */
+const classToKinds = new Map<string, StopKind[]>()
+;(Object.keys(CLASSES) as StopKind[]).forEach((k) =>
+  CLASSES[k].forEach((q) => classToKinds.set(q, [...(classToKinds.get(q) ?? []), k])),
+)
 
 const qid = (uri: string) => uri.slice(uri.lastIndexOf('/') + 1)
 
@@ -129,7 +138,7 @@ async function fetchRecommended(center: { lat: number; lng: number }, radiusKm: 
 
 async function fetchFromWikidata(center: { lat: number; lng: number }, radiusKm: number, category: CategoryId) {
   const kinds: StopKind[] = category === 'all' ? ['heritage', 'museum', 'nature', 'beach', 'view', 'market'] : [category]
-  const values = kinds.flatMap((k) => CLASSES[k]).map((q) => `wd:${q}`).join(' ')
+  const values = [...new Set(kinds.flatMap((k) => CLASSES[k]))].map((q) => `wd:${q}`).join(' ')
   // The inner query keeps only the 80 best-known places; names, photos and articles are fetched for those
   // alone. Without it, dense cities (thousands of Paris streets) time out.
   const query = `SELECT ?item ?itemLabel ?itemDescription ?coord ?type ?image ?links ?heTitle ?enTitle WHERE {
@@ -145,20 +154,29 @@ async function fetchFromWikidata(center: { lat: number; lng: number }, radiusKm:
   SERVICE wikibase:label { bd:serviceParam wikibase:language "he,en". }
 } ORDER BY DESC(?links)`
   const rows = await sparql(query)
-  const seen = new Set<string>()
+  const byId = new Map<string, PlaceInfo>()
   const out: PlaceInfo[] = []
   for (const r of rows) {
     const id = qid(r.item.value)
     const name = r.itemLabel?.value
-    if (seen.has(id) || !name || /^Q\d+$/.test(name)) continue // skip duplicates and items with no he/en name
-    seen.add(id)
+    const typeKinds = classToKinds.get(qid(r.type.value)) ?? ['heritage']
+    const known = byId.get(id)
+    if (known) {
+      // Same place under another class: it fits more categories
+      known.kinds = [...new Set([...(known.kinds ?? []), ...typeKinds])]
+      continue
+    }
+    if (!name || /^Q\d+$/.test(name)) continue // skip items with no he/en name
+    if (out.length >= 40) continue
     const m = /Point\(([-\d.]+) ([-\d.]+)\)/.exec(r.coord.value)
     if (!m) continue
     out.push({
       source: 'wikidata',
       ref: id,
       name,
-      kind: classToKind.get(qid(r.type.value)) ?? 'heritage',
+      // In a category view the place is shown as that category; in "all", as its first one
+      kind: category !== 'all' && typeKinds.includes(category) ? category : typeKinds[0],
+      kinds: typeKinds,
       lat: Number(m[2]),
       lng: Number(m[1]),
       description: r.itemDescription?.value,
@@ -167,7 +185,7 @@ async function fetchFromWikidata(center: { lat: number; lng: number }, radiusKm:
       article: r.heTitle ? { lang: 'he', title: r.heTitle.value } : r.enTitle ? { lang: 'en', title: r.enTitle.value } : undefined,
       popularity: Number(r.links.value),
     })
-    if (out.length >= 40) break
+    byId.set(id, out[out.length - 1])
   }
   return out
 }
@@ -294,7 +312,8 @@ const hoursCache = new Map<string, Promise<PlaceHours>>()
 
 /** Opening hours and practical info from OpenStreetMap (looked up by Wikidata id when needed) */
 export function placeHours(info: PlaceInfo): Promise<PlaceHours> {
-  if (info.source === 'osm' && info.openingHours) return Promise.resolve({ hours: info.openingHours, website: info.website, phone: info.phone })
+  if ((info.source === 'osm' && info.openingHours) || info.source === 'ai')
+    return Promise.resolve({ hours: info.openingHours, website: info.website, phone: info.phone })
   const key = `${info.source}:${info.ref}`
   const hit = hoursCache.get(key)
   if (hit) return hit
@@ -444,6 +463,20 @@ const sentences = (text: string) =>
     .map((s) => s.trim())
     .filter((s) => s.length > 25 && !/^[=\s]/.test(s))
 
+/** Best Wikipedia match for a place name: Hebrew first, then English */
+async function articleByName(name: string): Promise<{ lang: 'he' | 'en'; title: string } | undefined> {
+  const lang: 'he' | 'en' = /[\u0590-\u05FF]/.test(name) ? 'he' : 'en'
+  for (const l of lang === 'he' ? (['he', 'en'] as const) : (['en', 'he'] as const)) {
+    const url = `https://${l}.wikipedia.org/w/api.php?action=query&format=json&origin=*&list=search&srlimit=1&srsearch=${encodeURIComponent(name)}`
+    const res = await fetch(url)
+    if (!res.ok) continue
+    const data = (await res.json()) as { query?: { search?: { title: string }[] } }
+    const title = data.query?.search?.[0]?.title
+    if (title) return { lang: l, title }
+  }
+  return undefined
+}
+
 async function wikiText(article: { lang: 'he' | 'en'; title: string }) {
   const url = `https://${article.lang}.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=extracts&explaintext=1&exsectionformat=plain&exchars=2400&redirects=1&titles=${encodeURIComponent(article.title)}`
   const res = await fetch(url)
@@ -488,6 +521,9 @@ async function fetchDetails(info: PlaceInfo): Promise<PlaceDetails> {
       if (!article) article = r.heTitle ? { lang: 'he', title: r.heTitle.value } : r.enTitle ? { lang: 'en', title: r.enTitle.value } : undefined
     }
   }
+
+  // Places the assistant added have only a name and coordinates: find their Wikipedia article by name
+  if (!article && info.source === 'ai') article = await articleByName(info.name).catch(() => undefined)
 
   let summary: string | undefined
   if (article) {
@@ -635,7 +671,8 @@ async function entitiesToPlaces(ids: string[], signal?: AbortSignal): Promise<Pl
           source: 'wikidata',
           ref: en.id,
           name,
-          kind: types.map((t) => classToKind.get(t)).find(Boolean) ?? 'heritage',
+          kind: types.map((t) => classToKinds.get(t)?.[0]).find(Boolean) ?? 'heritage',
+          kinds: [...new Set(types.flatMap((t) => classToKinds.get(t) ?? []))],
           lat: coord.latitude,
           lng: coord.longitude,
           description: en.descriptions?.he?.value ?? en.descriptions?.en?.value,

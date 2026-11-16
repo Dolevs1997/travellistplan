@@ -1,3 +1,4 @@
+import { planActions, type PlanOp } from '../data/aiPlan'
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react'
 import { arrayMove } from '@dnd-kit/sortable'
 import { mockTrip } from '../data/mockTrip'
@@ -44,6 +45,8 @@ export type Action =
   | { type: 'removeStop'; stopId: string }
   | { type: 'restoreDayStops'; dayId: string; stops: Stop[] }
   | { type: 'setDaysDestination'; dayIds: string[]; destination: Destination }
+  /** A proposal from the AI assistant the user approved: applied as one step, creating a trip if none is open */
+  | { type: 'applyPlan'; ops: PlanOp[]; newTripId: string }
   | { type: 'setActiveTrip'; tripId: string }
   | { type: 'deleteTrip'; tripId: string }
   | { type: 'reset' }
@@ -348,6 +351,15 @@ function reducer(store: Store, action: Action): Store {
       // Fall back to another of the user's own trips, never to the sample
       const own = firstOwnTrip(trips)
       return { trips, activeTripId: own?.id ?? '', activeDayId: own?.progress?.dayId ?? own?.days[0]?.id ?? '', selectedStopId: null }
+    }
+    case 'applyPlan': {
+      let s = store.trips.some((t) => t.id === store.activeTripId) ? store : reducer(store, { type: 'createTrip', id: action.newTripId })
+      for (const op of action.ops) {
+        const trip = s.trips.find((t) => t.id === s.activeTripId)
+        if (!trip) break
+        for (const a of planActions(trip, op)) s = reducer(s, a)
+      }
+      return s
     }
     case 'reset': {
       // Restore only the sample trip; the user's own trips stay

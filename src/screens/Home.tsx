@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { ArrowLeft, Bell, Compass, MapPin, Plus, Search } from 'lucide-react'
+import { ArrowLeft, Bell, Compass, MapPin, Plus, Search, Sparkles } from 'lucide-react'
 import DestinationsMap from '../components/DestinationsMap'
 import { BottomNav, Fab, IconButton, ScreenHeader, Tag, cx } from '../components/ui'
 import { countdownLabel, daysUntil, isoInDays, tripRange, tripStats } from '../data/helpers'
 import type { Trip } from '../data/types'
 import { isSampleTrip, useTrip } from '../state/TripStore'
-import { navigate } from '../router'
+import { href, navigate } from '../router'
 
 const greeting = () => {
   const h = new Date().getHours()
@@ -68,6 +68,20 @@ export default function Home() {
           <Search size={20} aria-hidden="true" />
           חפשו עיר, מדינה או אזור
         </button>
+
+        {/* The AI trip assistant: recommendations from the web and trip changes after approval */}
+        <a
+          href={href('/chat')}
+          className="flex items-center gap-3 rounded-2xl border border-accent/40 bg-accent/8 px-4 py-3 transition-colors duration-200 ease-out hover:bg-accent/12"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-tile bg-accent text-on-accent" aria-hidden="true">
+            <Sparkles size={20} />
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <span className="text-[15px] font-semibold">עוזר הטיול</span>
+            <span className="text-[13px] text-muted">המלצות למסעדות ולינה, ובניית הטיול – באישורכם</span>
+          </span>
+        </a>
 
         {trip ? <NextTripCard trip={trip} onOpen={() => openTrip(trip.id)} /> : <EmptyCard onNew={newTrip} />}
 
