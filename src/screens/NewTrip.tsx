@@ -77,7 +77,7 @@ export default function NewTrip() {
           <p className="text-[13px] text-muted">המפה תתמקד ביעד רק אחרי יצירת הטיול. לינה, מסעדות ופעילויות אפשר להוסיף גם אחר כך.</p>
         </header>
 
-        <Section icon={MapPin} title="לאן נוסעים?" hint={destination ? `נבחר: ${destination.name}, ${destination.country}` : 'בחרו עיר מהרשימה'}>
+        <Section icon={MapPin} title="לאן נוסעים?" hint={destination ? `נבחר: ${destination.name}, ${destination.country}` : 'עיר, אזור או מדינה שלמה. יעדים נוספים אפשר להוסיף אחר כך בפרטי הטיול'}>
           <DestinationPicker value={destination} onChange={setDestination} />
         </Section>
 

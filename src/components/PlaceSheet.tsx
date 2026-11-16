@@ -63,7 +63,7 @@ function PlaceBody({ place, action }: { place: PlaceInfo; action?: ReactNode }) 
   const photos = details?.gallery.length ? details.gallery : place.image ? [{ url: place.image, page: place.imagePage ?? '' }] : []
   const website = hours.data?.website ?? details?.website ?? place.website
   const phone = hours.data?.phone ?? place.phone
-  const hideEmptyHours = place.kind === 'beach' || place.kind === 'view' || place.kind === 'nature'
+  const hideEmptyHours = place.kind === 'beach' || place.kind === 'view' || place.kind === 'nature' || place.kind === 'street'
 
   const where = place.address ?? place.description
 

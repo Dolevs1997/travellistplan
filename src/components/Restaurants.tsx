@@ -1,3 +1,4 @@
+import { dayDestination } from '../data/helpers'
 import { ExternalLink, Plus, UtensilsCrossed } from 'lucide-react'
 import type { Day } from '../data/types'
 import { CITY_LABEL, RESTAURANTS, googleSearchUrl, restaurantCityForDay, restaurantsNearUrl } from '../data/restaurants'
@@ -16,15 +17,16 @@ export default function Restaurants({ day }: { day: Day }) {
   const { state } = useTrip()
   const { trip } = state
   const city = restaurantCityForDay(day)
-  const cityName = trip.destination?.name ?? day.city
+  const dest = dayDestination(trip, day)
+  const cityName = dest?.name ?? day.city
   const saved = (trip.restaurants ?? []).filter((r) => !r.dayId || r.dayId === day.id)
 
   // Center of the day's places, else the destination
   const n = day.stops.length
   const center = n
     ? { lat: day.stops.reduce((a, s) => a + s.lat, 0) / n, lng: day.stops.reduce((a, s) => a + s.lng, 0) / n }
-    : trip.destination
-      ? { lat: trip.destination.lat, lng: trip.destination.lng }
+    : dest
+      ? { lat: dest.lat, lng: dest.lng }
       : null
 
   return (

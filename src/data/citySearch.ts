@@ -13,6 +13,7 @@ interface GeoResult {
   longitude: number
   feature_code?: string
   country?: string
+  country_code?: string
   admin1?: string
   population?: number
 }
@@ -23,22 +24,25 @@ export interface CityHit extends Destination {
 }
 
 /** GeoNames feature codes kept besides populated places: islands, island groups, regions */
-const AREA_CODES = new Set(['ISL', 'ISLS', 'ADM1', 'ADM2', 'RGN', 'PEN', 'AREA'])
+const AREA_CODES = new Set(['ISL', 'ISLS', 'ADM1', 'ADM2', 'RGN', 'PEN', 'AREA', 'PCLI', 'PCLD', 'PCLS', 'PCLF', 'PCL'])
+const COUNTRY_CODES = new Set(['PCLI', 'PCLD', 'PCLS', 'PCLF', 'PCL'])
 
 /** Shown under the name so an island or region isn't mistaken for a town */
-const KIND_LABEL: Record<string, string> = { ISL: 'אי', ISLS: 'קבוצת איים', ADM1: 'מחוז', ADM2: 'מחוז', RGN: 'אזור', PEN: 'חצי אי', AREA: 'אזור' }
+const KIND_LABEL: Record<string, string> = { PCLI: 'מדינה', PCLD: 'מדינה', PCLS: 'מדינה', PCLF: 'מדינה', PCL: 'מדינה', ISL: 'אי', ISLS: 'קבוצת איים', ADM1: 'מחוז', ADM2: 'מחוז', RGN: 'אזור', PEN: 'חצי אי', AREA: 'אזור' }
 
 const isPlace =(code?: string) => !code || code.startsWith('PPL') || AREA_CODES.has(code)
 
 function zoomFor(code: string | undefined, population = 0) {
+  if (code && COUNTRY_CODES.has(code)) return 5
   if (code === 'ISLS' || code === 'ADM1' || code === 'RGN' || code === 'AREA') return 7
   if (code === 'ISL' || code === 'PEN') return population > 500_000 ? 7.2 : 9.5
   if (code === 'ADM2') return 9
   return population > 1_000_000 ? 11 : population > 200_000 ? 12 : 13
 }
 
-export async function searchCities(query: string, signal?: AbortSignal): Promise<CityHit[]> {
-  const url = `${ENDPOINT}?name=${encodeURIComponent(query)}&count=12&language=he&format=json`
+export async function searchCities(query: string, signal?: AbortSignal, countryCode?: string): Promise<CityHit[]> {
+  const only = countryCode ? `&countryCode=${countryCode}` : ''
+  const url = `${ENDPOINT}?name=${encodeURIComponent(query)}&count=${countryCode ? 20 : 12}&language=he&format=json${only}`
   const res = await fetch(url, { signal })
   if (!res.ok) throw new Error(`city search failed: ${res.status}`)
   const data = (await res.json()) as { results?: GeoResult[] }
@@ -53,5 +57,6 @@ export async function searchCities(query: string, signal?: AbortSignal): Promise
       lat: r.latitude,
       lng: r.longitude,
       zoom: zoomFor(r.feature_code, r.population),
+      ...(r.feature_code && COUNTRY_CODES.has(r.feature_code) ? { kind: 'country' as const, country: r.name, countryCode: r.country_code } : {}),
     }))
 }

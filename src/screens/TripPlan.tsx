@@ -4,13 +4,14 @@ import { IconButton } from '../components/ui'
 import {
   ActivitySection,
   DateRangeFields,
+  LegsSection,
   LodgingSection,
   RestaurantSection,
   Section,
   validRange,
   type DayOption,
 } from '../components/PlanSections'
-import { isoRange, shortDate } from '../data/helpers'
+import { isoRange, shortDate, tripLegs } from '../data/helpers'
 import { useTrip } from '../state/TripStore'
 
 /** Trip details: dates, lodging, restaurants and activities, editable any time. */
@@ -22,8 +23,22 @@ export default function TripPlan() {
   const [start, setStart] = useState(first)
   const [end, setEnd] = useState(last)
 
-  const city = trip.destination?.name ?? ''
-  const days: DayOption[] = trip.days.map((d, i) => ({ id: d.id, label: `יום ${i + 1} · ${shortDate(d.date)}` }))
+  const legs = tripLegs(trip)
+  const city = legs.map((l) => l.destination.name).join(' ') || (trip.destination?.name ?? '')
+  const days = trip.days.map((d, i) => ({ id: d.id, date: d.date, label: `יום ${i + 1} · ${shortDate(d.date)}` }))
+  const legViews = legs.map((l) => {
+    const from = trip.days.indexOf(l.days[0]) + 1
+    return {
+      destination: l.destination,
+      from,
+      to: from + l.days.length - 1,
+      fromDate: l.days[0].date,
+      toDate: l.days[l.days.length - 1].date,
+      dayIds: l.days.map((d) => d.id),
+      stops: l.days.reduce((n, d) => n + d.stops.length, 0),
+    }
+  })
+  const countries = [...new Set(legs.map((l) => l.destination.country).filter(Boolean))]
 
   const changed = start !== first || end !== last
   const keep = new Set(validRange(start, end) ? isoRange(start, end) : [])
@@ -39,7 +54,7 @@ export default function TripPlan() {
           <h1 className="truncate text-2xl font-bold">פרטי הטיול</h1>
           <span className="text-[13px] text-muted">
             {trip.name}
-            {trip.destination ? ` · ${trip.destination.country}` : ''}
+            {countries.length ? ` · ${countries.join(', ')}` : ''}
           </span>
         </div>
       </header>
@@ -86,6 +101,8 @@ export default function TripPlan() {
         />
       </Section>
 
+      <LegsSection legs={legViews} days={days} onSet={(dayIds, destination) => dispatch({ type: 'setDaysDestination', dayIds, destination })} />
+
       <LodgingSection
         items={trip.lodgings ?? []}
         onAdd={(item) => dispatch({ type: 'addLodging', item })}
@@ -99,14 +116,14 @@ export default function TripPlan() {
         onAdd={(item) => dispatch({ type: 'addRestaurant', item })}
         onRemove={(id) => dispatch({ type: 'removeExtra', list: 'restaurants', id })}
         city={city}
-        days={days}
+        days={days as DayOption[]}
       />
       <ActivitySection
         items={trip.activities ?? []}
         onAdd={(item) => dispatch({ type: 'addActivity', item })}
         onRemove={(id) => dispatch({ type: 'removeExtra', list: 'activities', id })}
         city={city}
-        days={days}
+        days={days as DayOption[]}
       />
     </div>
   )

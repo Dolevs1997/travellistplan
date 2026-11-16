@@ -20,6 +20,22 @@ export const DEFAULT_DAY_END = '18:00'
 export const dayStart = (day: Day) => day.startTime ?? DEFAULT_DAY_START
 export const dayEnd = (day: Day) => day.endTime ?? DEFAULT_DAY_END
 
+/** Where a day takes place: its own destination when the trip is split into legs, else the trip's */
+export const dayDestination = (trip: Trip, day: Day) => day.destination ?? trip.destination
+
+/** Consecutive days with the same destination, in order (the trip's legs) */
+export function tripLegs(trip: Trip) {
+  const legs: { destination: NonNullable<Trip['destination']>; days: Day[] }[] = []
+  for (const day of trip.days) {
+    const dest = dayDestination(trip, day)
+    if (!dest) continue
+    const last = legs[legs.length - 1]
+    if (last && last.destination.id === dest.id) last.days.push(day)
+    else legs.push({ destination: dest, days: [day] })
+  }
+  return legs
+}
+
 export function dayIndexOf(trip: Trip, dayId: string) {
   return trip.days.findIndex((d) => d.id === dayId)
 }
@@ -219,6 +235,7 @@ export const DEFAULT_VISIT: Record<StopKind, number> = {
   market: 60,
   food: 75,
   shopping: 90,
+  street: 45,
 }
 
 export const directionsUrl = (s: { lat: number; lng: number }) =>

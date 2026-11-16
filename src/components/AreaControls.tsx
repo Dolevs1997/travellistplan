@@ -168,7 +168,20 @@ interface Hit {
   zoom: number
 }
 
-export function PlaceAreaSearch({ open, onOpenChange, onPick }: { open: boolean; onOpenChange: (o: boolean) => void; onPick: (a: Area) => void }) {
+export function PlaceAreaSearch({
+  open,
+  onOpenChange,
+  onPick,
+  country,
+  countryCode,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onPick: (a: Area) => void
+  /** Search inside this country (the day's destination): its name, and ISO code when known */
+  country?: string
+  countryCode?: string
+}) {
   const [q, setQ] = useState('')
   const [world, setWorld] = useState<{ status: 'idle' | 'loading' | 'done' | 'error'; hits: Hit[] }>({ status: 'idle', hits: [] })
   const term = q.trim()
@@ -176,9 +189,12 @@ export function PlaceAreaSearch({ open, onOpenChange, onPick }: { open: boolean;
   // Built-in destinations first: they have Hebrew names for regions like Sicily or Tuscany
   const local: Hit[] = useMemo(
     () =>
-      term.length < 2
-        ? []
-        : DESTINATIONS.filter((d) => d.name.includes(term) || d.country.includes(term)).map((d) => ({
+      (term.length < 2
+        ? country
+          ? DESTINATIONS.filter((d) => d.kind !== 'country' && d.country === country)
+          : []
+        : DESTINATIONS.filter((d) => d.name.includes(term) || d.country.includes(term))
+      ).map((d) => ({
             id: d.id,
             name: d.name,
             sub: d.country,
@@ -186,7 +202,7 @@ export function PlaceAreaSearch({ open, onOpenChange, onPick }: { open: boolean;
             lng: d.lng,
             zoom: d.zoom,
           })),
-    [term],
+    [term, country],
   )
 
   useEffect(() => {
@@ -197,7 +213,7 @@ export function PlaceAreaSearch({ open, onOpenChange, onPick }: { open: boolean;
     const ctrl = new AbortController()
     setWorld((w) => ({ status: 'loading', hits: w.hits }))
     const t = window.setTimeout(() => {
-      searchCities(term, ctrl.signal)
+      searchCities(term, ctrl.signal, countryCode)
         .then((hits) =>
           setWorld({
             status: 'done',
@@ -210,9 +226,11 @@ export function PlaceAreaSearch({ open, onOpenChange, onPick }: { open: boolean;
       window.clearTimeout(t)
       ctrl.abort()
     }
-  }, [term])
+  }, [term, countryCode])
 
-  const hits = [...local, ...world.hits.filter((h) => !local.some((l) => l.name === h.name))]
+  const all = [...local, ...world.hits.filter((h) => !local.some((l) => l.name === h.name))]
+  // Places in the day's country first
+  const hits = country ? [...all.filter((h) => h.sub.includes(country)), ...all.filter((h) => !h.sub.includes(country))] : all
 
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange}>
@@ -227,18 +245,18 @@ export function PlaceAreaSearch({ open, onOpenChange, onPick }: { open: boolean;
           <Drawer.Title className="text-xl font-bold">המלצות באזור אחר</Drawer.Title>
           <label className="flex h-[52px] shrink-0 items-center gap-2.5 rounded-2xl border border-border bg-raised px-4 text-muted focus-within:border-accent">
             <Search size={20} aria-hidden="true" />
-            <span className="sr-only">עיר, עיירה, כפר או מחוז</span>
+            <span className="sr-only">{country ? `עיר, עיירה, כפר או מחוז ב${country}` : 'עיר, עיירה, כפר או מחוז'}</span>
             <input
               type="search"
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="עיר, עיירה, כפר או מחוז"
+              placeholder={country ? `עיר, עיירה, כפר או מחוז ב${country}` : 'עיר, עיירה, כפר או מחוז'}
               className="min-w-0 flex-1 bg-transparent text-[15px] text-text outline-none placeholder:text-muted"
             />
           </label>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto" data-vaul-no-drag aria-live="polite">
-            {term.length < 2 && <p className="text-[14px] text-muted">הקלידו שם של מקום – מכפר קטן ועד מחוז שלם.</p>}
+            {term.length < 2 && <p className="text-[14px] text-muted">הקלידו שם של מקום – מכפר קטן ועד מחוז שלם{country && local.length ? `, או בחרו מקום ב${country}:` : '.'}</p>}
             {term.length >= 2 && world.status === 'loading' && hits.length === 0 && <p className="text-[14px] text-muted">מחפשים…</p>}
             {world.status === 'error' && hits.length === 0 && <p className="text-[14px] text-muted">החיפוש לא זמין כרגע.</p>}
             {world.status === 'done' && hits.length === 0 && <p className="text-[14px] text-muted">לא מצאנו מקום בשם הזה. נסו באנגלית.</p>}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AttributionControl, LngLatBounds, Map as MLMap, Marker, type GeoJSONSource } from 'maplibre-gl'
 import type { Day, Trip } from '../data/types'
-import { freeSlot, isPastDay, stopStatus } from '../data/helpers'
+import { dayDestination, freeSlot, isPastDay, stopStatus } from '../data/helpers'
 import { prefersReducedMotion } from '../router'
 import { applyMapTheme, currentStyleUrl } from '../maplibreSetup'
 import { mapColors, useTheme } from '../theme'
@@ -69,13 +69,14 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
   useEffect(() => {
     if (!container.current) return
     let map: MLMap
+    const startDest = dayDestination(trip, day)
     try {
       map = new MLMap({
         container: container.current,
         style: currentStyleUrl(),
         // Start on the trip's destination; never on a city the user hasn't chosen
-        center: trip.destination ? [trip.destination.lng, trip.destination.lat] : [12, 28],
-        zoom: trip.destination?.zoom ?? 1.2,
+        center: startDest ? [startDest.lng, startDest.lat] : [12, 28],
+        zoom: startDest?.zoom ?? 1.2,
         attributionControl: false,
         dragRotate: false,
         pitchWithRotate: false,
@@ -190,9 +191,9 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
     if (!map) return
     const pts = [...day.stops, ...(showSuggestions ? day.suggestions : [])].map((p) => [p.lng, p.lat] as [number, number])
     if (pts.length === 0) {
-      // Nothing planned yet: show the destination itself
-      if (trip.destination)
-        map.easeTo({ center: [trip.destination.lng, trip.destination.lat], zoom: trip.destination.zoom, padding: padding(), duration: duration() })
+      // Nothing planned yet: show the day's destination itself
+      const dest = dayDestination(trip, day)
+      if (dest) map.easeTo({ center: [dest.lng, dest.lat], zoom: dest.zoom, padding: padding(), duration: duration() })
       return
     }
     if (pts.length === 1) {

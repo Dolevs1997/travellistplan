@@ -3,6 +3,7 @@ import { Map as MLMap, Marker } from 'maplibre-gl'
 import { Minus, Plus } from 'lucide-react'
 import { prefersReducedMotion } from '../router'
 import type { Trip } from '../data/types'
+import { dayDestination } from '../data/helpers'
 import { applyMapTheme, currentStyleUrl } from '../maplibreSetup'
 import { cssVar, useTheme } from '../theme'
 
@@ -14,19 +15,23 @@ interface Place {
 
 /** The trip's destination cities in visiting order, each placed at the middle of its stops. */
 export function tripDestinations(trip: Trip): Place[] {
-  const byCity = new Map<string, { lat: number; lng: number; n: number }>()
+  // Grouped by the day's destination (each leg of the trip); a leg with no stops yet sits on its destination
+  const byPlace = new Map<string, { lat: number; lng: number; n: number; home?: { lat: number; lng: number } }>()
   for (const day of trip.days) {
+    const dest = dayDestination(trip, day)
+    const name = dest?.name ?? day.city
+    if (!name) continue
+    const c = byPlace.get(name) ?? { lat: 0, lng: 0, n: 0, home: dest ? { lat: dest.lat, lng: dest.lng } : undefined }
     for (const s of day.stops) {
-      const c = byCity.get(day.city) ?? { lat: 0, lng: 0, n: 0 }
-      byCity.set(day.city, { lat: c.lat + s.lat, lng: c.lng + s.lng, n: c.n + 1 })
+      c.lat += s.lat
+      c.lng += s.lng
+      c.n += 1
     }
+    byPlace.set(name, c)
   }
-  const places = [...byCity].map(([name, c]) => ({ name, lat: c.lat / c.n, lng: c.lng / c.n }))
-  if (places.length === 0 && trip.destination) {
-    const d = trip.destination
-    return [{ name: d.name, lat: d.lat, lng: d.lng }]
-  }
-  return places
+  return [...byPlace].flatMap(([name, c]) =>
+    c.n ? [{ name, lat: c.lat / c.n, lng: c.lng / c.n }] : c.home ? [{ name, ...c.home }] : [],
+  )
 }
 
 const PIN_SVG =

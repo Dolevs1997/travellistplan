@@ -1,4 +1,4 @@
-export type StopKind = 'food' | 'heritage' | 'museum' | 'view' | 'nature' | 'beach' | 'market' | 'shopping'
+export type StopKind = 'food' | 'heritage' | 'museum' | 'view' | 'nature' | 'beach' | 'market' | 'shopping' | 'street'
 export type TransitMode = 'walk' | 'tram' | 'bus' | 'metro' | 'train' | 'car'
 
 /**
@@ -80,6 +80,8 @@ export interface Day {
   /** Planned hours for the day, "HH:MM" (default 10:00–18:00) */
   startTime?: string
   endTime?: string
+  /** Where this day takes place, when the trip has several destinations (else the trip's) */
+  destination?: Destination
 }
 
 export interface BudgetCategory {
@@ -96,6 +98,10 @@ export interface Destination {
   lat: number
   lng: number
   zoom: number
+  /** A whole country: recommendations then start by picking a city or region inside it */
+  kind?: 'country'
+  /** ISO 3166-1 alpha-2, for searching places inside the country */
+  countryCode?: string
 }
 
 export type ActivityKind = 'museum' | 'shopping' | 'extreme' | 'cruise' | 'tour' | 'nature' | 'show' | 'other'

@@ -21,6 +21,7 @@ import {
   User,
   Wallet,
   type LucideIcon,
+  Signpost,
 } from 'lucide-react'
 import type { Day, StopKind, StopStatus, TransitMode } from '../data/types'
 import { dayChipLabel } from '../data/helpers'
@@ -38,6 +39,7 @@ export const KIND_ICON: Record<StopKind, LucideIcon> = {
   beach: Waves,
   market: Store,
   shopping: ShoppingBag,
+  street: Signpost,
 }
 
 export const MODE_ICON: Record<TransitMode, LucideIcon> = {

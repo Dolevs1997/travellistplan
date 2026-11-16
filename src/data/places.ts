@@ -28,6 +28,8 @@ const CLASSES: Record<StopKind, string[]> = {
   view: ['Q1440300', 'Q6017969', 'Q54050'],
   market: ['Q330284', 'Q37654', 'Q132510', 'Q1047669'],
   shopping: ['Q11315', 'Q216107', 'Q13226383', 'Q1758434'],
+  // street, boulevard, avenue (2 classes), pedestrian street, promenade, shopping street
+  street: ['Q79007', 'Q54114', 'Q7543083', 'Q207934', 'Q62685721', 'Q787113', 'Q21000333'],
   food: ['Q11707', 'Q30022', 'Q187456', 'Q131734', 'Q274393', 'Q1310145'],
 }
 
@@ -41,6 +43,7 @@ export const CATEGORIES: { id: CategoryId; label: string }[] = [
   { id: 'nature', label: 'טבע' },
   { id: 'view', label: 'תצפיות' },
   { id: 'shopping', label: 'קניות' },
+  { id: 'street', label: 'רחובות ושדרות' },
 ]
 
 export const KIND_LABEL: Record<StopKind, string> = {
@@ -52,6 +55,7 @@ export const KIND_LABEL: Record<StopKind, string> = {
   beach: 'חוף',
   view: 'תצפית',
   shopping: 'קניות',
+  street: 'רחוב ושדרה',
 }
 
 const classToKind = new Map<string, StopKind>()
@@ -126,16 +130,20 @@ async function fetchRecommended(center: { lat: number; lng: number }, radiusKm: 
 async function fetchFromWikidata(center: { lat: number; lng: number }, radiusKm: number, category: CategoryId) {
   const kinds: StopKind[] = category === 'all' ? ['heritage', 'museum', 'nature', 'beach', 'view', 'market'] : [category]
   const values = kinds.flatMap((k) => CLASSES[k]).map((q) => `wd:${q}`).join(' ')
+  // The inner query keeps only the 80 best-known places; names, photos and articles are fetched for those
+  // alone. Without it, dense cities (thousands of Paris streets) time out.
   const query = `SELECT ?item ?itemLabel ?itemDescription ?coord ?type ?image ?links ?heTitle ?enTitle WHERE {
-  SERVICE wikibase:around { ?item wdt:P625 ?coord. bd:serviceParam wikibase:center "Point(${center.lng} ${center.lat})"^^geo:wktLiteral. bd:serviceParam wikibase:radius "${radiusKm}". }
-  VALUES ?type { ${values} }
-  ?item wdt:P31 ?type.
-  ?item wikibase:sitelinks ?links.
+  { SELECT ?item ?coord ?type ?links WHERE {
+    SERVICE wikibase:around { ?item wdt:P625 ?coord. bd:serviceParam wikibase:center "Point(${center.lng} ${center.lat})"^^geo:wktLiteral. bd:serviceParam wikibase:radius "${radiusKm}". }
+    VALUES ?type { ${values} }
+    ?item wdt:P31 ?type.
+    ?item wikibase:sitelinks ?links.
+  } ORDER BY DESC(?links) LIMIT 80 }
   OPTIONAL { ?item wdt:P18 ?image. }
   OPTIONAL { ?he schema:about ?item; schema:isPartOf <https://he.wikipedia.org/>; schema:name ?heTitle. }
   OPTIONAL { ?en schema:about ?item; schema:isPartOf <https://en.wikipedia.org/>; schema:name ?enTitle. }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "he,en". }
-} ORDER BY DESC(?links) LIMIT 80`
+} ORDER BY DESC(?links)`
   const rows = await sparql(query)
   const seen = new Set<string>()
   const out: PlaceInfo[] = []
@@ -347,6 +355,7 @@ interface GeoPage {
 /** Guess a category from a Wikipedia short description (Hebrew or English) */
 function kindFromText(text = ''): StopKind | null {
   const t = text.toLowerCase()
+  if (/^(רחוב|שדרה|שדרות|טיילת|מדרחוב)|\b(street|boulevard|avenue|promenade|pedestrian)\b|^(rua|calle|via|rue|avenida|strada|straße)\b/.test(t) && !/station|תחנ/.test(t)) return 'street'
   if (/שכונ|רובע|תחנ|רחוב|בית ספר|אוניברסיט|בית חולים|מלון|חברה|עירייה|neighbo|district|station|street|school|universit|hospital|hotel|company|municipal|commune|village|town in|city in|institut|ministry|embassy|office|agency|מכון|משרד|שגרירות|סוכנות/.test(t)) return null
   if (/מוזיאון|גלריה|museum|gallery/.test(t)) return 'museum'
   if (/שוק|market/.test(t)) return 'market'
@@ -540,6 +549,7 @@ const ACTIVITIES: Record<StopKind, string[]> = {
   market: ['טעימות של אוכל מקומי', 'קניית מזכרות ומוצרים מקומיים', 'להגיע בבוקר, כשהדוכנים מלאים'],
   food: ['ארוחה במסעדה', 'לטעום מנה מקומית מוכרת', 'כדאי להזמין מקום מראש בערבים ובסופי שבוע'],
   shopping: ['קניות בחנויות ובמותגים', 'לחפש מוצרים מקומיים', 'הפסקת קפה בין החנויות'],
+  street: ['הליכה לאורך הרחוב והתרשמות מהבניינים', 'בתי קפה, חנויות ומופעי רחוב', 'בערב הרחוב מואר ותוסס – שווה לחזור'],
 }
 
 /** What visitors typically do there: by kind of place, plus hints from the summary */

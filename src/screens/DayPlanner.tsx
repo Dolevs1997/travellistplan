@@ -8,6 +8,7 @@ import { IconButton, IconTile, MODE_ICON, cx } from '../components/ui'
 import {
   DEFAULT_VISIT,
   TRANSIT_MODES,
+  dayDestination,
   dayEnd,
   dayStart,
   distanceKm,
@@ -19,10 +20,11 @@ import {
   toMin,
 } from '../data/helpers'
 import { CATEGORIES, KIND_LABEL, radiusKmFor, recommendedPlaces, searchPlaces, type CategoryId } from '../data/places'
-import type { Day, PlaceInfo, Stop, TransitMode } from '../data/types'
+import type { Day, Destination, PlaceInfo, Stop, TransitMode } from '../data/types'
 import { useTrip } from '../state/TripStore'
 import { restaurantsNearUrl } from '../data/restaurants'
 import { href } from '../router'
+import { DESTINATIONS } from '../data/destinations'
 
 /** Plan one day: hours, the itinerary (visit lengths + travel times) and recommended places to add. */
 export default function DayPlanner({ dayId }: { dayId: string }) {
@@ -39,24 +41,35 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
   const [retry, setRetry] = useState(0)
   const { remove: removeStop, toast: undoToast } = useRemoveWithUndo('bottom')
 
-  // Default area: the day's own stops if it has some, otherwise the trip's destination
+  // Where this day takes place (its leg of the trip). A whole country is too big to search,
+  // so there the user first picks a city or region inside it.
+  const dest = day ? dayDestination(trip, day) : trip.destination
+  const isCountry = dest?.kind === 'country'
+  const hasStops = !!day?.stops.length
+
+  // Default area: the day's own stops if it has some, otherwise the day's destination
   const routeCenter = useMemo(() => {
     if (day?.stops.length) {
       const n = day.stops.length
       return { lat: day.stops.reduce((a, s) => a + s.lat, 0) / n, lng: day.stops.reduce((a, s) => a + s.lng, 0) / n }
     }
-    return trip.destination ? { lat: trip.destination.lat, lng: trip.destination.lng } : null
+    return dest && !isCountry ? { lat: dest.lat, lng: dest.lng } : null
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayId, trip.destination])
+  }, [dayId, dest?.id, hasStops])
   const routeArea: Area = useMemo(
     () => ({
       kind: 'route',
-      label: day?.stops.length ? 'המסלול של היום' : (trip.destination?.name ?? 'היעד'),
+      label: hasStops ? 'המסלול של היום' : (dest?.name ?? 'היעד'),
       center: routeCenter,
-      radiusKm: snapRadius(radiusKmFor(trip.destination?.zoom ?? 12)),
+      radiusKm: snapRadius(radiusKmFor(isCountry ? 12 : (dest?.zoom ?? 12))),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [routeCenter, trip.destination],
+    [routeCenter, dest?.id],
+  )
+  // Quick picks inside a country: the built-in cities, islands and regions there
+  const inCountry = useMemo(
+    () => (isCountry && dest ? DESTINATIONS.filter((d) => d.kind !== 'country' && d.country === dest.country) : []),
+    [isCountry, dest],
   )
 
   // The area the user picked instead (null = near the route); "my location" follows the device
@@ -144,7 +157,7 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
         <div className="flex min-w-0 flex-col">
           <h1 className="truncate text-2xl font-bold">תכנון יום {index + 1}</h1>
           <span className="text-[13px] text-muted">
-            {formatDayLong(day.date)} · {trip.destination?.name ?? day.city}
+            {formatDayLong(day.date)} · {dest?.name ?? day.city}
           </span>
         </div>
       </header>
@@ -226,6 +239,14 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
         </div>
 
         <div aria-live="polite" className="flex flex-col gap-2">
+          {!area.center && area.kind === 'route' && dest && (
+            <CountryStart
+              country={dest.name}
+              picks={inCountry}
+              onPick={(d) => setChosen({ kind: 'place', label: d.name, center: { lat: d.lat, lng: d.lng }, radiusKm: snapRadius(radiusKmFor(d.zoom)) })}
+              onSearch={() => setAreaOpen('place')}
+            />
+          )}
           {recs.status === 'loading' && recs.items.length === 0 && <RecSkeleton />}
           {recs.status === 'error' && (
             <div className="flex flex-col items-center gap-2 rounded-card border border-border bg-surface p-4 text-center text-[14px] text-muted">
@@ -273,6 +294,8 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
       {undoToast}
       <PlaceAreaSearch
         open={areaOpen === 'place'}
+        country={isCountry ? dest?.country : undefined}
+        countryCode={isCountry ? dest?.countryCode : undefined}
         onOpenChange={(o) => setAreaOpen(o ? 'place' : null)}
         onPick={(a) => {
           setChosen(a)
@@ -282,7 +305,7 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
       <MapAreaPicker
         open={areaOpen === 'map'}
         onOpenChange={(o) => setAreaOpen(o ? 'map' : null)}
-        start={mapStart}
+        start={mapStart ?? (dest ? { lat: dest.lat, lng: dest.lng, radiusKm: 45 } : null)}
         onPick={(a) => {
           setChosen(a)
           setAreaOpen(null)
@@ -619,5 +642,49 @@ function ManualSearch({
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+  )
+}
+
+/** A day in a whole country: pick a city, island or region there to see recommendations */
+function CountryStart({
+  country,
+  picks,
+  onPick,
+  onSearch,
+}: {
+  country: string
+  picks: Destination[]
+  onPick: (d: Destination) => void
+  onSearch: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-card border border-border bg-surface p-4">
+      <div className="flex flex-col gap-0.5">
+        <h3 className="text-[15px] font-semibold">איפה ב{country}?</h3>
+        <p className="text-[13px] text-muted">בחרו עיר, עיירה, כפר, אי או מחוז, ונציג את המקומות המומלצים שם.</p>
+      </div>
+      {picks.length > 0 && (
+        <div role="group" aria-label={`מקומות ב${country}`} className="flex flex-wrap gap-2">
+          {picks.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => onPick(d)}
+              className="h-10 rounded-full border border-border bg-raised px-4 text-[14px] font-medium hover:border-accent hover:text-accent"
+            >
+              {d.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onSearch}
+        className="flex h-11 items-center justify-center gap-2 rounded-tile border border-dashed border-accent/60 text-[15px] font-medium text-accent hover:bg-accent/8"
+      >
+        <Search size={18} aria-hidden="true" />
+        חיפוש מקום ב{country}
+      </button>
+    </div>
   )
 }

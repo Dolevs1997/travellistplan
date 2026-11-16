@@ -179,7 +179,7 @@ function DaySelect({ id, days, value, onChange }: { id: string; days: DayOption[
 
 /* ---------- destination ---------- */
 
-const REGIONS: ('all' | Region)[] = ['all', 'areas', 'europe', 'mediterranean', 'asia', 'americas', 'africa-me']
+const REGIONS: ('all' | Region)[] = ['all', 'countries', 'areas', 'europe', 'mediterranean', 'asia', 'americas', 'africa-me']
 
 type WorldState = { status: 'idle' | 'loading' | 'done' | 'error'; hits: CityHit[] }
 
@@ -217,7 +217,7 @@ export function DestinationPicker({ value, onChange }: { value: Destination | nu
     () =>
       DESTINATIONS.filter(
         (d) => (region === 'all' || d.region === region) && (!term || d.name.includes(term) || d.country.includes(term)),
-      ),
+      ).sort((a, b) => (term ? Number(b.name === term) - Number(a.name === term) : 0)), // "איטליה" the country before Rome, Italy
     [term, region],
   )
   const world = useWorldSearch(term)
@@ -233,7 +233,7 @@ export function DestinationPicker({ value, onChange }: { value: Destination | nu
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="חפשו כל עיר בעולם"
+          placeholder="חפשו עיר, אזור או מדינה"
           className="min-w-0 flex-1 bg-transparent text-[15px] text-text outline-none placeholder:text-muted"
         />
       </label>
@@ -274,7 +274,7 @@ export function DestinationPicker({ value, onChange }: { value: Destination | nu
                     type="button"
                     role="radio"
                     aria-checked={on}
-                    onClick={() => onChange({ id: h.id, name: h.name, country: h.country, lat: h.lat, lng: h.lng, zoom: h.zoom })}
+                    onClick={() => onChange({ id: h.id, name: h.name, country: h.country, lat: h.lat, lng: h.lng, zoom: h.zoom, kind: h.kind, countryCode: h.countryCode })}
                     className={cx(
                       'flex min-h-[52px] shrink-0 items-center gap-2.5 rounded-card border px-2.5 py-1.5 text-start transition-colors duration-200 ease-out',
                       on ? 'border-accent bg-accent/10' : 'border-border bg-raised hover:border-border-strong',
@@ -332,7 +332,7 @@ export function DestinationPicker({ value, onChange }: { value: Destination | nu
               </span>
               <span className="flex min-w-0 flex-col">
                 <span className="text-[15px] leading-tight font-semibold">{d.name}</span>
-                <span className="truncate text-xs text-muted">{d.country}</span>
+                <span className="truncate text-xs text-muted">{d.kind === 'country' ? 'כל המדינה' : d.country}</span>
               </span>
             </button>
           )
@@ -632,6 +632,143 @@ export function ActivitySection({
           </Field>
           <Field label="יום">{(id) => <DaySelect id={id} days={days} value={dayId} onChange={setDayId} />}</Field>
           <SaveButton disabled={!name.trim()}>שמירת הפעילות</SaveButton>
+        </form>
+      )}
+    </Section>
+  )
+}
+
+/* ---------- legs (several destinations in one trip) ---------- */
+
+export interface LegView {
+  destination: Destination
+  /** 1-based day numbers and dates of the leg */
+  from: number
+  to: number
+  fromDate: string
+  toDate: string
+  dayIds: string[]
+  stops: number
+}
+
+/**
+ * "Where are we when": the trip split into consecutive legs, each in its own city, region or country.
+ * Adding a leg moves a range of days to a new destination; removing one gives its days back to the previous leg.
+ */
+export function LegsSection({
+  legs,
+  days,
+  onSet,
+}: {
+  legs: LegView[]
+  days: (DayOption & { date: string })[]
+  onSet: (dayIds: string[], destination: Destination) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [dest, setDest] = useState<Destination | null>(null)
+  const [from, setFrom] = useState(0)
+  const [to, setTo] = useState(0)
+
+  const toggle = () => {
+    setOpen((o) => !o)
+    setDest(null)
+    // Default: the second half of the trip
+    const half = Math.min(days.length - 1, Math.ceil(days.length / 2))
+    setFrom(half)
+    setTo(days.length - 1)
+  }
+
+  const lo = Math.min(from, to)
+  const hi = Math.max(from, to)
+  const range = days.slice(lo, hi + 1).map((d) => d.id)
+
+  return (
+    <Section
+      icon={Flag}
+      title="יעדים במסלול"
+      hint="אפשר לחלק את הטיול: כמה ימים במקום אחד ואז לעבור לעיר, אזור או מדינה אחרים"
+      count={legs.length > 1 ? legs.length : undefined}
+    >
+      {legs.length > 0 && (
+        <ol className="flex flex-col gap-2">
+          {legs.map((leg, i) => {
+            const back = legs[i - 1]?.destination ?? legs[i + 1]?.destination
+            return (
+              <li key={`${leg.destination.id}-${leg.from}`} className="flex items-center gap-2 rounded-card border border-border bg-raised py-1.5 ps-3 pe-1.5">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-water text-[13px] font-bold text-accent" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col py-1">
+                  <span className="truncate text-[15px] font-semibold" dir="auto">
+                    {leg.destination.name}
+                    {leg.destination.kind !== 'country' && leg.destination.country && (
+                      <span className="ms-1.5 text-[13px] font-normal text-muted">{leg.destination.country}</span>
+                    )}
+                  </span>
+                  <span className="truncate text-[13px] text-muted">
+                    {leg.from === leg.to ? `יום ${leg.from}` : `ימים ⁦${leg.from}–${leg.to}⁩`} · {dateRange(leg.fromDate, leg.toDate)}
+                    {leg.stops > 0 && ` · ${leg.stops} עצירות`}
+                  </span>
+                </div>
+                {back && (
+                  <button
+                    type="button"
+                    onClick={() => onSet(leg.dayIds, back)}
+                    aria-label={`הסרת ${leg.destination.name} מהמסלול (הימים יחזרו ל${back.name})`}
+                    title={`הימים יחזרו ל${back.name}`}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-tile text-muted hover:text-accent-2"
+                  >
+                    <Trash2 size={18} aria-hidden="true" />
+                  </button>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      )}
+
+      {days.length > 0 && <AddToggle label="הוספת יעד נוסף" open={open} onToggle={toggle} />}
+      {open && (
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!dest || !range.length) return
+            onSet(range, dest)
+            setOpen(false)
+          }}
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="מיום">
+              {(id) => (
+                <select id={id} value={from} onChange={(e) => setFrom(Number(e.target.value))} className={inputCls}>
+                  {days.map((d, i) => (
+                    <option key={d.id} value={i}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field label="עד יום">
+              {(id) => (
+                <select id={id} value={to} onChange={(e) => setTo(Number(e.target.value))} className={inputCls}>
+                  {days.map((d, i) => (
+                    <option key={d.id} value={i} disabled={i < from}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+          </div>
+          <DestinationPicker value={dest} onChange={setDest} />
+          <p className="text-[13px] text-muted">
+            בחרו עיר, עיירה, כפר, אי, מחוז או מדינה שלמה. במדינה שלמה, בתכנון היום תוכלו לבחור עיר או אזור בתוכה.
+          </p>
+          <SaveButton disabled={!dest}>
+            {dest ? `${dest.name} · ${range.length === 1 ? 'יום אחד' : `${range.length} ימים`}` : 'בחרו יעד'}
+          </SaveButton>
         </form>
       )}
     </Section>

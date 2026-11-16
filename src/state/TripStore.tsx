@@ -43,6 +43,7 @@ export type Action =
   | { type: 'setTransit'; stopId: string; transit: Transit }
   | { type: 'removeStop'; stopId: string }
   | { type: 'restoreDayStops'; dayId: string; stops: Stop[] }
+  | { type: 'setDaysDestination'; dayIds: string[]; destination: Destination }
   | { type: 'setActiveTrip'; tripId: string }
   | { type: 'deleteTrip'; tripId: string }
   | { type: 'reset' }
@@ -123,6 +124,19 @@ function withDates(trip: Trip, startDate: string, endDate: string): Trip {
     restaurants: (trip.restaurants ?? []).map(keepDay),
     activities: (trip.activities ?? []).map(keepDay),
   }
+}
+
+/** "טיול לליסבון ופורטו": rebuilt from the legs, unless the user renamed the trip */
+function autoName(trip: Trip) {
+  if (!/^טיול ל/.test(trip.name)) return trip.name
+  const names: string[] = []
+  for (const d of trip.days) {
+    const n = (d.destination ?? trip.destination)?.name
+    if (n && !names.includes(n)) names.push(n)
+  }
+  if (!names.length) return trip.name
+  const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} ו${names[names.length - 1]}`
+  return `טיול ל${joined}`
 }
 
 const mapDay = (trip: Trip, dayId: string, fn: (d: Day) => Day): Trip => ({
@@ -272,6 +286,22 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
         trip: mapDayOfStop(trip, action.stopId, (d) => reflowDay({ ...d, stops: d.stops.filter((s) => s.id !== action.stopId) }, d.stops[0]?.start)),
         selectedStopId: null,
       }
+    case 'setDaysDestination': {
+      // Split the trip into legs: these days now take place in `destination`
+      const ids = new Set(action.dayIds)
+      const days = trip.days.map((d) =>
+        ids.has(d.id)
+          ? {
+              ...d,
+              destination: action.destination.id === trip.destination?.id ? undefined : action.destination,
+              city: action.destination.name,
+              title: action.destination.name,
+            }
+          : d,
+      )
+      const next = { ...trip, days }
+      return { trip: { ...next, name: autoName(next) } }
+    }
     case 'restoreDayStops':
       // Undo a removal: put the day's stops back exactly as they were (times and travel included)
       return { trip: mapDay(trip, action.dayId, (d) => ({ ...d, stops: action.stops })) }
