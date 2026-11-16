@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { Drawer } from 'vaul'
 import { ArrowRight, Check, Clock, Info, Minus, Plus, Search, Trash2 } from 'lucide-react'
 import PlaceSheet from '../components/PlaceSheet'
+import { AreaBar, MapAreaPicker, PlaceAreaSearch, snapRadius, useLiveLocation, type Area } from '../components/AreaControls'
 import { IconButton, IconTile, MODE_ICON, cx } from '../components/ui'
 import {
   DEFAULT_VISIT,
@@ -29,13 +30,14 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
   const day = trip.days[index]
 
   const [category, setCategory] = useState<CategoryId>('all')
-  const [recs, setRecs] = useState<{ status: 'loading' | 'done' | 'error'; items: PlaceInfo[] }>({ status: 'loading', items: [] })
+  const [recs, setRecs] = useState<{ status: 'idle' | 'loading' | 'done' | 'error'; items: PlaceInfo[] }>({ status: 'loading', items: [] })
   const [sheet, setSheet] = useState<{ place: PlaceInfo; stopId?: string } | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [areaOpen, setAreaOpen] = useState<'place' | 'map' | null>(null)
   const [retry, setRetry] = useState(0)
 
-  // Where to look: the day's own stops if it has some, otherwise the trip's destination
-  const center = useMemo(() => {
+  // Default area: the day's own stops if it has some, otherwise the trip's destination
+  const routeCenter = useMemo(() => {
     if (day?.stops.length) {
       const n = day.stops.length
       return { lat: day.stops.reduce((a, s) => a + s.lat, 0) / n, lng: day.stops.reduce((a, s) => a + s.lng, 0) / n }
@@ -43,19 +45,48 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
     return trip.destination ? { lat: trip.destination.lat, lng: trip.destination.lng } : null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayId, trip.destination])
-  const radius = radiusKmFor(trip.destination?.zoom ?? 12)
+  const routeArea: Area = useMemo(
+    () => ({
+      kind: 'route',
+      label: day?.stops.length ? 'המסלול של היום' : (trip.destination?.name ?? 'היעד'),
+      center: routeCenter,
+      radiusKm: snapRadius(radiusKmFor(trip.destination?.zoom ?? 12)),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [routeCenter, trip.destination],
+  )
+
+  // The area the user picked instead (null = near the route); "my location" follows the device
+  const [chosen, setChosen] = useState<Area | null>(null)
+  const live = useLiveLocation(chosen?.kind === 'me')
+  const area: Area = useMemo(() => {
+    if (!chosen) return routeArea
+    if (chosen.kind === 'route') return { ...routeArea, radiusKm: chosen.radiusKm }
+    if (chosen.kind === 'me') return { ...chosen, center: live.pos }
+    return chosen
+  }, [chosen, routeArea, live.pos])
+  const centerKey = area.center ? `${area.center.lat.toFixed(4)},${area.center.lng.toFixed(4)}` : ''
+  const mapStart = useMemo(
+    () => (area.center ? { ...area.center, radiusKm: area.radiusKm } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [centerKey, area.radiusKm],
+  )
 
   useEffect(() => {
-    if (!center) return
+    if (!area.center) {
+      setRecs({ status: 'idle', items: [] }) // waiting for a location
+      return
+    }
     let alive = true
     setRecs((r) => ({ status: 'loading', items: r.items }))
-    recommendedPlaces(center, radius, category)
+    recommendedPlaces(area.center, area.radiusKm, category)
       .then((items) => alive && setRecs({ status: 'done', items }))
       .catch(() => alive && setRecs({ status: 'error', items: [] }))
     return () => {
       alive = false
     }
-  }, [center, radius, category, retry])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [centerKey, area.radiusKm, category, retry])
 
   if (!day) {
     return (
@@ -163,6 +194,16 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
           </h2>
           <p className="text-[12px] text-muted">מסודרים לפי פופולריות בוויקיפדיה. ביקורות מבקרים – בכפתור "ביקורות בגוגל" בכל מקום.</p>
         </div>
+        <AreaBar
+          area={area}
+          locating={area.kind === 'me' && live.locating}
+          error={area.kind === 'me' ? live.error : ''}
+          onRoute={() => setChosen(null)}
+          onMe={() => setChosen({ kind: 'me', label: 'המיקום שלך', center: null, radiusKm: 3 })}
+          onSearch={() => setAreaOpen('place')}
+          onMap={() => setAreaOpen('map')}
+          onRadius={(km) => setChosen({ ...area, radiusKm: km })}
+        />
         <div role="group" aria-label="סוג מקום" className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
           {CATEGORIES.map((c) => (
             <button
@@ -201,7 +242,7 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
             <RecCard
               key={p.ref}
               place={p}
-              distance={center ? distanceKm(center, p) : undefined}
+              distance={area.center ? distanceKm(area.center, p) : undefined}
               added={addedRefs.has(p.ref)}
               onOpen={() => setSheet({ place: p })}
               onAdd={() => add(p)}
@@ -214,11 +255,28 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
         סיום – חזרה ללו״ז
       </a>
 
+      <PlaceAreaSearch
+        open={areaOpen === 'place'}
+        onOpenChange={(o) => setAreaOpen(o ? 'place' : null)}
+        onPick={(a) => {
+          setChosen(a)
+          setAreaOpen(null)
+        }}
+      />
+      <MapAreaPicker
+        open={areaOpen === 'map'}
+        onOpenChange={(o) => setAreaOpen(o ? 'map' : null)}
+        start={mapStart}
+        onPick={(a) => {
+          setChosen(a)
+          setAreaOpen(null)
+        }}
+      />
       <PlaceSheet place={sheet?.place ?? null} onClose={() => setSheet(null)} action={sheetAction} />
       <ManualSearch
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        near={center ?? undefined}
+        near={area.center ?? routeCenter ?? undefined}
         onPick={(p) => {
           setSearchOpen(false)
           // Let the search sheet close before opening the details sheet

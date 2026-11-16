@@ -66,8 +66,15 @@ const commonsPage = (fileOrUrl: string) => {
   return `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(file)}`
 }
 
-async function sparql(query: string, signal?: AbortSignal) {
-  const res = await fetch(`${SPARQL}?format=json&query=${encodeURIComponent(query)}`, { signal, headers: { Accept: 'application/sparql-results+json' } })
+async function sparql(query: string, signal?: AbortSignal, timeoutMs = 12_000) {
+  // The public query service is sometimes slow or down (502): give up after a while so callers can fall back
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
+  signal?.addEventListener('abort', () => ctrl.abort())
+  const res = await fetch(`${SPARQL}?format=json&query=${encodeURIComponent(query)}`, {
+    signal: ctrl.signal,
+    headers: { Accept: 'application/sparql-results+json' },
+  }).finally(() => window.clearTimeout(timer))
   if (!res.ok) throw new Error(`wikidata ${res.status}`)
   const data = (await res.json()) as { results: { bindings: Record<string, { value: string }>[] } }
   return data.results.bindings
@@ -91,7 +98,18 @@ export function recommendedPlaces(center: { lat: number; lng: number }, radiusKm
   return p
 }
 
+/** Wikidata first (categories + popularity); if it fails, Wikipedia's nearby search (fast and reliable) */
 async function fetchRecommended(center: { lat: number; lng: number }, radiusKm: number, category: CategoryId) {
+  try {
+    return await fetchFromWikidata(center, radiusKm, category)
+  } catch {
+    const fallback = await wikipediaNearby(center, radiusKm, category)
+    if (!fallback.length && category === 'all') throw new Error('no recommendations')
+    return fallback
+  }
+}
+
+async function fetchFromWikidata(center: { lat: number; lng: number }, radiusKm: number, category: CategoryId) {
   const kinds: StopKind[] = category === 'all' ? ['heritage', 'museum', 'nature', 'view', 'market'] : [category]
   const values = kinds.flatMap((k) => CLASSES[k]).map((q) => `wd:${q}`).join(' ')
   const query = `SELECT ?item ?itemLabel ?itemDescription ?coord ?type ?image ?links ?heTitle ?enTitle WHERE {
@@ -130,6 +148,68 @@ async function fetchRecommended(center: { lat: number; lng: number }, radiusKm: 
     if (out.length >= 40) break
   }
   return out
+}
+
+/* ---------- fallback: Wikipedia nearby search ---------- */
+
+interface GeoPage {
+  title: string
+  index?: number
+  description?: string
+  coordinates?: { lat: number; lon: number }[]
+  thumbnail?: { source: string }
+  pageimage?: string
+  pageprops?: { wikibase_item?: string }
+}
+
+/** Guess a category from a Wikipedia short description (Hebrew or English) */
+function kindFromText(text = ''): StopKind | null {
+  const t = text.toLowerCase()
+  if (/שכונ|רובע|תחנ|רחוב|בית ספר|אוניברסיט|בית חולים|מלון|חברה|עירייה|neighbo|district|station|street|school|universit|hospital|hotel|company|municipal|commune|village|town in|city in|institut|ministry|embassy|office|agency|מכון|משרד|שגרירות|סוכנות/.test(t)) return null
+  if (/מוזיאון|גלריה|museum|gallery/.test(t)) return 'museum'
+  if (/שוק|market/.test(t)) return 'market'
+  if (/קניון|mall|department store|shopping/.test(t)) return 'shopping'
+  if (/מסעד|בית קפה|restaurant|café|cafe|bakery|bar\b/.test(t)) return 'food'
+  if (/תצפית|viewpoint|observation|lookout|גבעה|hill/.test(t)) return 'view'
+  if (/פארק|גן |גנים|חוף|הר |אגם|יער|מפל|park|garden|beach|mountain|lake|forest|waterfall|zoo|aquarium/.test(t)) return 'nature'
+  return 'heritage'
+}
+
+async function wikipediaNearby(center: { lat: number; lng: number }, radiusKm: number, category: CategoryId): Promise<PlaceInfo[]> {
+  const radius = Math.min(10_000, Math.round(radiusKm * 1000)) // the API's maximum is 10 km
+  const run = async (lang: 'he' | 'en') => {
+    const url = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=geosearch&ggscoord=${center.lat}%7C${center.lng}&ggsradius=${radius}&ggslimit=60&prop=coordinates%7Cpageimages%7Cdescription%7Cpageprops&ppprop=wikibase_item&piprop=thumbnail%7Cname&pithumbsize=640&colimit=max&pilimit=max`
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const pages = Object.values(((await res.json()) as { query?: { pages?: Record<string, GeoPage> } }).query?.pages ?? {})
+    return pages.sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).map((p) => ({ p, lang }))
+  }
+  const [he, en] = await Promise.all([run('he').catch(() => []), run('en').catch(() => [])])
+  const seen = new Set<string>()
+  const out: PlaceInfo[] = []
+  // Hebrew articles first (Hebrew names), then English ones for places with no Hebrew article
+  for (const { p, lang } of [...he, ...en]) {
+    const ref = p.pageprops?.wikibase_item
+    const c = p.coordinates?.[0]
+    if (!ref || !c || seen.has(ref)) continue
+    const kind = kindFromText(`${p.description ?? ''} ${p.title}`)
+    if (!kind || (category !== 'all' && kind !== category)) continue
+    seen.add(ref)
+    out.push({
+      source: 'wikidata',
+      ref,
+      name: p.title,
+      kind,
+      lat: c.lat,
+      lng: c.lon,
+      description: p.description,
+      image: p.thumbnail?.source,
+      imagePage: p.pageimage ? `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(p.pageimage)}` : undefined,
+      article: { lang, title: p.title },
+    })
+  }
+  // Places with a photo first: usually the better-documented sights
+  return out.sort((a, b) => Number(!!b.image) - Number(!!a.image)).slice(0, 40)
 }
 
 /* ---------- details ---------- */
