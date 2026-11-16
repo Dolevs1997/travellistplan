@@ -48,11 +48,17 @@ export const RESTAURANTS: Record<RestaurantCity, Restaurant[]> = {
   ],
 }
 
-export function restaurantCityForDay(day: Day): RestaurantCity {
+/** The curated list's city for this day, or null when the day is somewhere else (no fallback to Lisbon) */
+export function restaurantCityForDay(day: Day): RestaurantCity | null {
   if (day.title === 'סינטרה') return 'sintra'
   if (day.city === 'פורטו') return 'porto'
-  return 'lisbon'
+  if (day.city === 'ליסבון') return 'lisbon'
+  return null
 }
+
+/** Google Maps restaurant search around a point (sorted/filterable by rating there) */
+export const restaurantsNearUrl = (lat: number, lng: number) =>
+  `https://www.google.com/maps/search/restaurants/@${lat.toFixed(5)},${lng.toFixed(5)},15z`
 
 export const googleSearchUrl = (r: Restaurant, city: RestaurantCity) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${r.name} ${CITY_QUERY[city]}`)}`
