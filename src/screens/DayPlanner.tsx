@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { Drawer } from 'vaul'
-import { ArrowRight, Check, Clock, Info, Minus, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowRight, Check, Clock, ExternalLink, Info, Minus, Plus, Search, Trash2 } from 'lucide-react'
 import PlaceSheet from '../components/PlaceSheet'
 import { useRemoveWithUndo } from '../components/UndoRemove'
 import { AreaBar, MapAreaPicker, PlaceAreaSearch, snapRadius, useLiveLocation, type Area } from '../components/AreaControls'
@@ -21,6 +21,7 @@ import {
 import { CATEGORIES, KIND_LABEL, radiusKmFor, recommendedPlaces, searchPlaces, type CategoryId } from '../data/places'
 import type { Day, PlaceInfo, Stop, TransitMode } from '../data/types'
 import { useTrip } from '../state/TripStore'
+import { restaurantsNearUrl } from '../data/restaurants'
 import { href } from '../router'
 
 /** Plan one day: hours, the itinerary (visit lengths + travel times) and recommended places to add. */
@@ -80,7 +81,8 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
       return
     }
     let alive = true
-    setRecs((r) => ({ status: 'loading', items: r.items }))
+    // Clear the old list: showing another category's places while loading is misleading
+    setRecs({ status: 'loading', items: [] })
     recommendedPlaces(area.center, area.radiusKm, category)
       .then((items) => alive && setRecs({ status: 'done', items }))
       .catch(() => alive && setRecs({ status: 'error', items: [] }))
@@ -250,6 +252,17 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
               onAdd={() => add(p)}
             />
           ))}
+          {category === 'food' && area.center && (
+            <a
+              href={restaurantsNearUrl(area.center.lat, area.center.lng)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-12 items-center justify-center gap-2 rounded-tile border border-border-strong bg-surface text-[14px] font-medium"
+            >
+              עוד מסעדות באזור, עם דירוגים – בגוגל מפות
+              <ExternalLink size={14} aria-hidden="true" />
+            </a>
+          )}
         </div>
       </section>
 

@@ -17,6 +17,7 @@ import {
   TrainFrontTunnel,
   TramFront,
   Trees,
+  Waves,
   User,
   Wallet,
   type LucideIcon,
@@ -34,6 +35,7 @@ export const KIND_ICON: Record<StopKind, LucideIcon> = {
   museum: Palette,
   view: Binoculars,
   nature: Trees,
+  beach: Waves,
   market: Store,
   shopping: ShoppingBag,
 }

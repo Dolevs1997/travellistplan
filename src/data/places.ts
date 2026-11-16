@@ -23,7 +23,8 @@ const CLASSES: Record<StopKind, string[]> = {
     'Q839954', 'Q570116', 'Q174782', 'Q483453', 'Q12518', 'Q12280', 'Q24354', 'Q57821', 'Q170980', 'Q179700',
     'Q1081138', 'Q15243209', 'Q2319498',
   ],
-  nature: ['Q22698', 'Q1107656', 'Q167346', 'Q40080', 'Q8502', 'Q23397', 'Q35509', 'Q34038', 'Q46169', 'Q473972', 'Q43501', 'Q2281788', 'Q4421'],
+  nature: ['Q22698', 'Q1107656', 'Q167346', 'Q8502', 'Q23397', 'Q35509', 'Q34038', 'Q46169', 'Q473972', 'Q43501', 'Q2281788', 'Q4421'],
+  beach: ['Q40080', 'Q14713846'], // beach, river beach
   view: ['Q1440300', 'Q6017969', 'Q54050'],
   market: ['Q330284', 'Q37654', 'Q132510', 'Q1047669'],
   shopping: ['Q11315', 'Q216107', 'Q13226383', 'Q1758434'],
@@ -34,7 +35,8 @@ export const CATEGORIES: { id: CategoryId; label: string }[] = [
   { id: 'all', label: 'הכל' },
   { id: 'heritage', label: 'תרבות ומורשת' },
   { id: 'museum', label: 'מוזיאונים' },
-  { id: 'food', label: 'אוכל' },
+  { id: 'food', label: 'מסעדות' },
+  { id: 'beach', label: 'חופים' },
   { id: 'market', label: 'שווקים' },
   { id: 'nature', label: 'טבע' },
   { id: 'view', label: 'תצפיות' },
@@ -47,6 +49,7 @@ export const KIND_LABEL: Record<StopKind, string> = {
   food: 'אוכל',
   market: 'שוק',
   nature: 'טבע',
+  beach: 'חוף',
   view: 'תצפית',
   shopping: 'קניות',
 }
@@ -66,7 +69,7 @@ const commonsPage = (fileOrUrl: string) => {
   return `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(file)}`
 }
 
-async function sparql(query: string, signal?: AbortSignal, timeoutMs = 12_000) {
+async function sparql(query: string, signal?: AbortSignal, timeoutMs = 20_000) {
   // The public query service is sometimes slow or down (502): give up after a while so callers can fall back
   const ctrl = new AbortController()
   const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
@@ -100,6 +103,17 @@ export function recommendedPlaces(center: { lat: number; lng: number }, radiusKm
 
 /** Wikidata first (categories + popularity); if it fails, Wikipedia's nearby search (fast and reliable) */
 async function fetchRecommended(center: { lat: number; lng: number }, radiusKm: number, category: CategoryId) {
+  // Restaurants: well-known ones from Wikidata plus many more (with opening hours) from OpenStreetMap.
+  // Both run at once; OpenStreetMap's public servers are often slow, so they get 10 s at most.
+  if (category === 'food') {
+    const [famous, osm] = await Promise.all([
+      fetchFromWikidata(center, radiusKm, 'food').catch(() => [] as PlaceInfo[]),
+      foodNearby(center, radiusKm, 10_000).catch(() => [] as PlaceInfo[]),
+    ])
+    const seen = new Set(famous.map((p) => p.name.toLowerCase()))
+    const merged = [...famous, ...osm.filter((p) => !seen.has(p.name.toLowerCase()))].slice(0, 40)
+    if (merged.length) return merged
+  }
   try {
     return await fetchFromWikidata(center, radiusKm, category)
   } catch {
@@ -110,7 +124,7 @@ async function fetchRecommended(center: { lat: number; lng: number }, radiusKm: 
 }
 
 async function fetchFromWikidata(center: { lat: number; lng: number }, radiusKm: number, category: CategoryId) {
-  const kinds: StopKind[] = category === 'all' ? ['heritage', 'museum', 'nature', 'view', 'market'] : [category]
+  const kinds: StopKind[] = category === 'all' ? ['heritage', 'museum', 'nature', 'beach', 'view', 'market'] : [category]
   const values = kinds.flatMap((k) => CLASSES[k]).map((q) => `wd:${q}`).join(' ')
   const query = `SELECT ?item ?itemLabel ?itemDescription ?coord ?type ?image ?links ?heTitle ?enTitle WHERE {
   SERVICE wikibase:around { ?item wdt:P625 ?coord. bd:serviceParam wikibase:center "Point(${center.lng} ${center.lat})"^^geo:wktLiteral. bd:serviceParam wikibase:radius "${radiusKm}". }
@@ -150,6 +164,174 @@ async function fetchFromWikidata(center: { lat: number; lng: number }, radiusKm:
   return out
 }
 
+/* ---------- OpenStreetMap (Overpass): restaurants and opening hours ---------- */
+
+/** Public Overpass servers; they are often busy, so ask several and take the first good answer */
+const OVERPASS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+]
+
+interface OsmElement {
+  type: string
+  id: number
+  lat?: number
+  lon?: number
+  center?: { lat: number; lon: number }
+  tags?: Record<string, string>
+}
+
+/** Resolve with the first promise that succeeds; reject only if all fail */
+function firstSuccess<T>(promises: Promise<T>[]): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let failed = 0
+    promises.forEach((p) =>
+      p.then(resolve, (e) => {
+        failed += 1
+        if (failed === promises.length) reject(e)
+      }),
+    )
+  })
+}
+
+async function overpass(query: string, timeoutMs = 25_000): Promise<OsmElement[]> {
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    return await firstSuccess(
+      OVERPASS.map(async (url) => {
+        const res = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: query }), signal: ctrl.signal })
+        if (!res.ok) throw new Error(`overpass ${res.status}`)
+        const data = (await res.json()) as { elements?: OsmElement[] }
+        if (!data.elements) throw new Error('overpass: no data')
+        return data.elements
+      }),
+    )
+  } finally {
+    window.clearTimeout(timer)
+    ctrl.abort() // stop the slower servers
+  }
+}
+
+const CUISINE_HE: Record<string, string> = {
+  italian: 'איטלקי', pizza: 'פיצה', regional: 'מקומי', portuguese: 'פורטוגלי', spanish: 'ספרדי', french: 'צרפתי',
+  greek: 'יווני', seafood: 'פירות ים', fish: 'דגים', japanese: 'יפני', sushi: 'סושי', chinese: 'סיני', indian: 'הודי',
+  thai: 'תאילנדי', mexican: 'מקסיקני', burger: 'המבורגר', steak_house: 'סטייקיה', vegetarian: 'צמחוני', vegan: 'טבעוני',
+  coffee_shop: 'קפה', ice_cream: 'גלידה', tapas: 'טאפאס', mediterranean: 'ים תיכוני', turkish: 'טורקי', kebab: 'קבב',
+  middle_eastern: 'מזרח תיכוני', american: 'אמריקאי', asian: 'אסייתי', vietnamese: 'וייטנאמי', korean: 'קוריאני',
+}
+
+const cuisineHe = (raw?: string) =>
+  raw
+    ?.split(';')
+    .map((c) => CUISINE_HE[c.trim()] ?? c.trim().replace(/_/g, ' '))
+    .slice(0, 2)
+    .join(', ')
+
+function osmToPlace(e: OsmElement, kind: StopKind): PlaceInfo | null {
+  const t = e.tags ?? {}
+  const lat = e.lat ?? e.center?.lat
+  const lng = e.lon ?? e.center?.lon
+  const name = t['name:he'] ?? t.name
+  if (!name || lat === undefined || lng === undefined) return null
+  const street = [t['addr:street'], t['addr:housenumber']].filter(Boolean).join(' ')
+  const what = t.amenity === 'cafe' ? 'בית קפה' : t.amenity === 'bar' || t.amenity === 'pub' ? 'בר' : 'מסעדה'
+  const cuisine = cuisineHe(t.cuisine)
+  return {
+    source: 'osm',
+    ref: `${e.type}/${e.id}`,
+    name,
+    kind,
+    lat,
+    lng,
+    description: cuisine ? `${what} · ${cuisine}` : what,
+    address: street || undefined,
+    openingHours: t.opening_hours,
+    website: t.website ?? t['contact:website'],
+    phone: t.phone ?? t['contact:phone'],
+    cuisine,
+    image: t.image?.startsWith('http') ? t.image : t.wikimedia_commons?.startsWith('File:') ? commonsImage(t.wikimedia_commons) : undefined,
+  }
+}
+
+/**
+ * Restaurants and cafés near a point from OpenStreetMap. There are no ratings there, so the
+ * better-documented places come first (Wikidata link, website, cuisine, opening hours).
+ */
+async function foodNearby(center: { lat: number; lng: number }, radiusKm: number, timeoutMs = 25_000): Promise<PlaceInfo[]> {
+  const r = Math.round(Math.min(radiusKm, 3) * 1000) // dense in cities: 3 km is plenty
+  const els = await overpass(
+    `[out:json][timeout:20];nwr(around:${r},${center.lat},${center.lng})[amenity~"^(restaurant|cafe)$"][name];out center tags 400;`,
+    timeoutMs,
+  )
+  const score = (t: Record<string, string> = {}) =>
+    (t.wikidata ? 5 : 0) + (t.website || t['contact:website'] ? 2 : 0) + (t.cuisine ? 1 : 0) + (t.opening_hours ? 1 : 0) + (t.phone ? 0.5 : 0)
+  return els
+    .sort((a, b) => score(b.tags) - score(a.tags))
+    .map((e) => osmToPlace(e, 'food'))
+    .filter((p): p is PlaceInfo => !!p)
+    .slice(0, 40)
+}
+
+export interface PlaceHours {
+  hours?: string
+  website?: string
+  phone?: string
+  fee?: boolean
+  wheelchair?: boolean
+}
+
+const hoursCache = new Map<string, Promise<PlaceHours>>()
+
+/** Opening hours and practical info from OpenStreetMap (looked up by Wikidata id when needed) */
+export function placeHours(info: PlaceInfo): Promise<PlaceHours> {
+  if (info.source === 'osm' && info.openingHours) return Promise.resolve({ hours: info.openingHours, website: info.website, phone: info.phone })
+  const key = `${info.source}:${info.ref}`
+  const hit = hoursCache.get(key)
+  if (hit) return hit
+  const q =
+    info.source === 'wikidata'
+      ? `[out:json][timeout:15];nwr["wikidata"="${info.ref}"];out tags 3;`
+      : `[out:json][timeout:15];${info.ref.replace('/', '(')});out tags;`
+  const p = overpass(q, 20_000)
+    .then((els) => {
+      const t = els.find((e) => e.tags?.opening_hours)?.tags ?? els[0]?.tags ?? {}
+      return {
+        hours: t.opening_hours,
+        website: t.website ?? t['contact:website'] ?? info.website,
+        phone: t.phone ?? t['contact:phone'] ?? info.phone,
+        fee: t.fee === 'yes' ? true : t.fee === 'no' ? false : undefined,
+        wheelchair: t.wheelchair === 'yes' ? true : t.wheelchair === 'no' ? false : undefined,
+      }
+    })
+    .catch((e) => {
+      hoursCache.delete(key)
+      throw e
+    })
+  hoursCache.set(key, p)
+  return p
+}
+
+const DAY_HE: Record<string, string> = { Mo: 'ב׳', Tu: 'ג׳', We: 'ד׳', Th: 'ה׳', Fr: 'ו׳', Sa: 'ש׳', Su: 'א׳', PH: 'חגים' }
+
+/** "Mo-Fr 09:00-18:00; Sa 10:00-14:00" → lines in Hebrew day names */
+export function formatHours(raw: string): string[] {
+  if (raw.trim() === '24/7') return ['פתוח 24 שעות, כל השבוע']
+  return raw
+    .split(';')
+    .map((rule) =>
+      rule
+        .trim()
+        .replace(/\b(Mo|Tu|We|Th|Fr|Sa|Su|PH)\b/g, (d) => DAY_HE[d])
+        .replace(/\boff\b|\bclosed\b/gi, 'סגור')
+        .replace(/,(?=\S)/g, ', ')
+        // Keep each time range in reading order inside Hebrew text: 09:00–18:00
+        .replace(/(\d\d:\d\d)\s*-\s*(\d\d:\d\d\+?)/g, '⁦$1–$2⁩'),
+    )
+    .filter(Boolean)
+}
+
 /* ---------- fallback: Wikipedia nearby search ---------- */
 
 interface GeoPage {
@@ -171,6 +353,7 @@ function kindFromText(text = ''): StopKind | null {
   if (/קניון|mall|department store|shopping/.test(t)) return 'shopping'
   if (/מסעד|בית קפה|restaurant|café|cafe|bakery|bar\b/.test(t)) return 'food'
   if (/תצפית|viewpoint|observation|lookout|גבעה|hill/.test(t)) return 'view'
+  if (/חוף רחצה|^חוף|beach|playa|praia|plage|spiaggia/.test(t)) return 'beach'
   if (/פארק|גן |גנים|חוף|הר |אגם|יער|מפל|park|garden|beach|mountain|lake|forest|waterfall|zoo|aquarium/.test(t)) return 'nature'
   return 'heritage'
 }
@@ -220,6 +403,10 @@ export interface PlaceDetails {
   facts: string[]
   tips: string[]
   website?: string
+  /** More photos of the place (Wikimedia Commons / the Wikipedia article) */
+  gallery: { url: string; page: string }[]
+  /** What visitors typically do there */
+  activities: string[]
 }
 
 const detailsCache = new Map<string, Promise<PlaceDetails>>()
@@ -261,16 +448,18 @@ const fmtInt = (n: number) => n.toLocaleString('he-IL')
 async function fetchDetails(info: PlaceInfo): Promise<PlaceDetails> {
   const facts: string[] = []
   const tips: string[] = []
-  let website: string | undefined
+  let website: string | undefined = info.website
+  let commonsCat: string | undefined
   let article = info.article
 
   if (info.source === 'wikidata') {
-    const rows = await sparql(`SELECT ?inception ?visitors ?unesco ?website ?heritage ?heTitle ?enTitle WHERE {
+    const rows = await sparql(`SELECT ?inception ?visitors ?unesco ?website ?commonsCat ?heTitle ?enTitle WHERE {
   BIND(wd:${info.ref} AS ?item)
   OPTIONAL { ?item wdt:P571 ?inception. }
   OPTIONAL { ?item wdt:P1174 ?visitors. }
   OPTIONAL { ?item wdt:P1435 wd:Q9259. BIND(true AS ?unesco) }
   OPTIONAL { ?item wdt:P856 ?website. }
+  OPTIONAL { ?item wdt:P373 ?commonsCat. }
   OPTIONAL { ?he schema:about ?item; schema:isPartOf <https://he.wikipedia.org/>; schema:name ?heTitle. }
   OPTIONAL { ?en schema:about ?item; schema:isPartOf <https://en.wikipedia.org/>; schema:name ?enTitle. }
 } LIMIT 1`).catch(() => [])
@@ -286,6 +475,7 @@ async function fetchDetails(info: PlaceInfo): Promise<PlaceDetails> {
         tips.push('אתר מוכר ומבוקש – כדאי לבדוק מראש אם צריך להזמין כרטיסים')
       }
       if (r.website) website = r.website.value
+      if (r.commonsCat) commonsCat = r.commonsCat.value
       if (!article) article = r.heTitle ? { lang: 'he', title: r.heTitle.value } : r.enTitle ? { lang: 'en', title: r.enTitle.value } : undefined
     }
   }
@@ -301,7 +491,65 @@ async function fetchDetails(info: PlaceInfo): Promise<PlaceDetails> {
   if (website) tips.push('שעות פתיחה ומחירים עדכניים – באתר הרשמי')
   if (info.popularity && info.popularity >= 40) tips.push('מהמקומות המפורסמים באזור – הגעה בשעות הבוקר המוקדמות עוזרת להימנע מעומס')
 
-  return { summary, summaryLang: article?.lang, facts, tips, website }
+  const gallery = await placeGallery(info, commonsCat, article).catch(() => [])
+  const activities = activitiesFor(info, summary)
+  return { summary, summaryLang: article?.lang, facts, tips, website, gallery, activities }
+}
+
+/* ---------- photo gallery ---------- */
+
+interface ImagePage {
+  title: string
+  imageinfo?: { thumburl?: string; url?: string; width?: number; height?: number; descriptionurl?: string; mime?: string }[]
+}
+
+const usablePhoto = (p: ImagePage) => {
+  const ii = p.imageinfo?.[0]
+  if (!ii?.thumburl || !/image\/(jpeg|png|webp)/.test(ii.mime ?? 'image/jpeg')) return false
+  if ((ii.width ?? 0) < 500 || (ii.height ?? 0) < 300) return false // icons, maps, logos
+  return !/logo|icon|flag|coat of arms|map|locator|symbol|signature|\.svg/i.test(p.title)
+}
+
+/** Up to 10 photos: the place's Commons category first, else the images in its Wikipedia article */
+async function placeGallery(info: PlaceInfo, commonsCat?: string, article?: { lang: 'he' | 'en'; title: string }) {
+  const urlFor = (cat: string) =>
+    `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=categorymembers&gcmtitle=${encodeURIComponent(`Category:${cat}`)}&gcmtype=file&gcmlimit=30&prop=imageinfo&iiprop=url%7Csize%7Cmime&iiurlwidth=800`
+  const fromArticle = (a: { lang: string; title: string }) =>
+    `https://${a.lang}.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=images&titles=${encodeURIComponent(a.title)}&gimlimit=30&prop=imageinfo&iiprop=url%7Csize%7Cmime&iiurlwidth=800`
+  let pages: ImagePage[] = []
+  for (const url of [commonsCat && urlFor(commonsCat), article && fromArticle(article)].filter(Boolean) as string[]) {
+    const res = await fetch(url)
+    if (!res.ok) continue
+    pages = Object.values(((await res.json()) as { query?: { pages?: Record<string, ImagePage> } }).query?.pages ?? {}).filter(usablePhoto)
+    if (pages.length >= 2) break
+  }
+  const out = pages.slice(0, 10).map((p) => ({ url: p.imageinfo![0].thumburl!, page: p.imageinfo![0].descriptionurl ?? '' }))
+  // Keep the main photo first
+  if (info.image && !out.some((g) => g.url.split('/').pop() === info.image!.split('/').pop())) out.unshift({ url: info.image, page: info.imagePage ?? '' })
+  return out
+}
+
+/* ---------- what to do there ---------- */
+
+const ACTIVITIES: Record<StopKind, string[]> = {
+  museum: ['לראות את התערוכות והאוספים הקבועים', 'לבדוק אם יש תערוכה מתחלפת או סיור מודרך', 'לחנות המוזיאון ולבית הקפה, אם יש'],
+  heritage: ['לסייר במקום ולהכיר את ההיסטוריה שלו', 'לצלם – בשעות הבוקר או לפני השקיעה האור הכי יפה', 'לחפש סיור מודרך או מדריך קולי'],
+  nature: ['טיול רגלי או הליכה נינוחה', 'פיקניק או מנוחה בצל', 'צילום נוף וטבע'],
+  beach: ['רחצה בים ושיזוף', 'ספורט מים או הליכה לאורך החוף', 'שקיעה על החוף'],
+  view: ['תצפית על העיר והסביבה', 'צילום – בעיקר בשקיעה', 'עצירה קצרה במסלול – לרוב 20–40 דקות מספיקות'],
+  market: ['טעימות של אוכל מקומי', 'קניית מזכרות ומוצרים מקומיים', 'להגיע בבוקר, כשהדוכנים מלאים'],
+  food: ['ארוחה במסעדה', 'לטעום מנה מקומית מוכרת', 'כדאי להזמין מקום מראש בערבים ובסופי שבוע'],
+  shopping: ['קניות בחנויות ובמותגים', 'לחפש מוצרים מקומיים', 'הפסקת קפה בין החנויות'],
+}
+
+/** What visitors typically do there: by kind of place, plus hints from the summary */
+function activitiesFor(info: PlaceInfo, summary = '') {
+  const list = [...ACTIVITIES[info.kind]]
+  const t = summary.toLowerCase()
+  if (/מגדל|tower|כיפה|dome/.test(t)) list.unshift('לעלות לתצפית מלמעלה, אם הגישה פתוחה')
+  if (/גן |garden|פארק|park/.test(t) && info.kind !== 'nature') list.push('להסתובב בגנים שמסביב')
+  if (/כנסי|בזיליק|קתדר|church|basilica|cathedral|מנזר|monastery/.test(t)) list.push('לבוש צנוע (כתפיים וברכיים מכוסות) נדרש בדרך כלל')
+  return list.slice(0, 4)
 }
 
 /* ---------- manual search ---------- */
@@ -410,6 +658,7 @@ function osmKind(key = '', value = ''): StopKind {
   if (key === 'tourism' && ['museum', 'gallery'].includes(value)) return 'museum'
   if (key === 'tourism' && value === 'viewpoint') return 'view'
   if (key === 'shop') return 'shopping'
+  if (key === 'natural' && value === 'beach') return 'beach'
   if (key === 'leisure' || key === 'natural') return 'nature'
   return 'heritage'
 }

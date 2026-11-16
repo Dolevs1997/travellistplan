@@ -1,4 +1,4 @@
-export type StopKind = 'food' | 'heritage' | 'museum' | 'view' | 'nature' | 'market' | 'shopping'
+export type StopKind = 'food' | 'heritage' | 'museum' | 'view' | 'nature' | 'beach' | 'market' | 'shopping'
 export type TransitMode = 'walk' | 'tram' | 'bus' | 'metro' | 'train' | 'car'
 
 /**
@@ -23,6 +23,11 @@ export interface PlaceInfo {
   address?: string
   /** Popularity used for ranking (number of Wikipedia language editions) */
   popularity?: number
+  /** From OpenStreetMap when known: raw opening_hours, website, phone, cuisine */
+  openingHours?: string
+  website?: string
+  phone?: string
+  cuisine?: string
 }
 export type StopStatus = 'done' | 'current' | 'upcoming'
 

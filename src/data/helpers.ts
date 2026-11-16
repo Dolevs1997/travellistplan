@@ -215,6 +215,7 @@ export const DEFAULT_VISIT: Record<StopKind, number> = {
   heritage: 60,
   view: 30,
   nature: 60,
+  beach: 180,
   market: 60,
   food: 75,
   shopping: 90,
