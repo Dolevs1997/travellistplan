@@ -3,6 +3,7 @@ import { Drawer } from 'vaul'
 import { ArrowRight, ClipboardList, Footprints, ListPlus, LocateFixed, Map as MapIcon, Navigation, Plus, Share2, UtensilsCrossed } from 'lucide-react'
 import TripMap from '../components/TripMap'
 import Restaurants from '../components/Restaurants'
+import { useRemoveWithUndo } from '../components/UndoRemove'
 import { nearbyRestaurantsUrl } from '../data/restaurants'
 import Timeline from '../components/Timeline'
 import { DayChips, IconButton, IconTile, MODE_ICON, StopNode, cx } from '../components/ui'
@@ -26,6 +27,7 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
   const [snap, setSnap] = useState<string | number | null>(expanded ? FULL : PEEK)
   const [recenterKey, setRecenterKey] = useState(0)
   const [toast, setToast] = useState('')
+  const { remove: removeStop, toast: undoToast } = useRemoveWithUndo('top')
 
   useEffect(() => setSnap(expanded ? FULL : PEEK), [expanded])
 
@@ -214,6 +216,7 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
                       selectedStopId={selectedStopId}
                       onSelect={selectStop}
                       onReorder={(from, to) => dispatch({ type: 'reorder', dayId: day.id, from, to })}
+                      onRemove={(id) => removeStop(day, id)}
                     />
                   </div>
                   <Restaurants day={day} />
@@ -223,6 +226,7 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>
+      {undoToast}
     </div>
   )
 }

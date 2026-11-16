@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { ArrowRight, BookOpen, Navigation } from 'lucide-react'
+import { ArrowRight, BookOpen, Navigation, Trash2 } from 'lucide-react'
 import PlaceMap from '../components/PlaceMap'
 import PlaceSheet from '../components/PlaceSheet'
 import { IconButton, IconTile, Tag, cx } from '../components/ui'
@@ -14,6 +14,7 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
   const noteId = useId()
   const moveId = useId()
   const [infoOpen, setInfoOpen] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   if (!found) {
     return (
@@ -155,6 +156,39 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
               </select>
             </label>
           </div>
+
+          {confirmRemove ? (
+            <div role="alertdialog" aria-labelledby="remove-q" className="flex flex-col gap-2 rounded-card border border-dashed border-accent-2 bg-accent-2/6 p-3">
+              <p id="remove-q" className="text-[14px] font-medium">
+                להסיר את {stop.name} מהלו״ז של יום {dayIndex + 1}?
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    dispatch({ type: 'removeStop', stopId: stop.id })
+                    navigate('/trip/schedule')
+                  }}
+                  className="h-11 rounded-tile bg-accent-2 text-[14px] font-semibold text-on-accent-2"
+                >
+                  כן, להסיר
+                </button>
+                <button type="button" onClick={() => setConfirmRemove(false)} className="h-11 rounded-tile border border-border-strong text-[14px] font-medium">
+                  ביטול
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmRemove(true)}
+              className="flex h-12 items-center justify-center gap-2 rounded-tile border border-border-strong text-[14px] font-medium text-accent-2"
+            >
+              <Trash2 size={18} aria-hidden="true" />
+              הסרה מהלו״ז
+            </button>
+          )}
         </div>
       </main>
       <PlaceSheet place={infoOpen ? (stop.info ?? null) : null} onClose={() => setInfoOpen(false)} />

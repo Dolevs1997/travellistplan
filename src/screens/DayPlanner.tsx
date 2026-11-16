@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { Drawer } from 'vaul'
 import { ArrowRight, Check, Clock, Info, Minus, Plus, Search, Trash2 } from 'lucide-react'
 import PlaceSheet from '../components/PlaceSheet'
+import { useRemoveWithUndo } from '../components/UndoRemove'
 import { AreaBar, MapAreaPicker, PlaceAreaSearch, snapRadius, useLiveLocation, type Area } from '../components/AreaControls'
 import { IconButton, IconTile, MODE_ICON, cx } from '../components/ui'
 import {
@@ -35,6 +36,7 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [areaOpen, setAreaOpen] = useState<'place' | 'map' | null>(null)
   const [retry, setRetry] = useState(0)
+  const { remove: removeStop, toast: undoToast } = useRemoveWithUndo('bottom')
 
   // Default area: the day's own stops if it has some, otherwise the trip's destination
   const routeCenter = useMemo(() => {
@@ -108,7 +110,7 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
       <button
         type="button"
         onClick={() => {
-          dispatch({ type: 'removeStop', stopId: stop.id })
+          removeStop(day, stop.id)
           setSheet(null)
         }}
         className="flex h-12 items-center justify-center gap-2 rounded-tile border border-border-strong text-[15px] font-medium text-accent-2"
@@ -164,7 +166,7 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
                   n={i + 1}
                   onInfo={() => (s.info ? setSheet({ place: s.info, stopId: s.id }) : null)}
                   onMinutes={(m) => dispatch({ type: 'setStopMinutes', stopId: s.id, minutes: m })}
-                  onRemove={() => dispatch({ type: 'removeStop', stopId: s.id })}
+                  onRemove={() => removeStop(day, s.id)}
                 />
                 {i < day.stops.length - 1 && (
                   <TravelRow
@@ -255,6 +257,7 @@ export default function DayPlanner({ dayId }: { dayId: string }) {
         סיום – חזרה ללו״ז
       </a>
 
+      {undoToast}
       <PlaceAreaSearch
         open={areaOpen === 'place'}
         onOpenChange={(o) => setAreaOpen(o ? 'place' : null)}

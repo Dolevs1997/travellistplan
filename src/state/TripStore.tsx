@@ -42,6 +42,7 @@ export type Action =
   | { type: 'setStopMinutes'; stopId: string; minutes: number }
   | { type: 'setTransit'; stopId: string; transit: Transit }
   | { type: 'removeStop'; stopId: string }
+  | { type: 'restoreDayStops'; dayId: string; stops: Stop[] }
   | { type: 'setActiveTrip'; tripId: string }
   | { type: 'deleteTrip'; tripId: string }
   | { type: 'reset' }
@@ -268,16 +269,27 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
       }
     case 'removeStop':
       return {
-        trip: mapDayOfStop(trip, action.stopId, (d) => reflowDay({ ...d, stops: d.stops.filter((s) => s.id !== action.stopId) })),
+        trip: mapDayOfStop(trip, action.stopId, (d) => reflowDay({ ...d, stops: d.stops.filter((s) => s.id !== action.stopId) }, d.stops[0]?.start)),
         selectedStopId: null,
       }
+    case 'restoreDayStops':
+      // Undo a removal: put the day's stops back exactly as they were (times and travel included)
+      return { trip: mapDay(trip, action.dayId, (d) => ({ ...d, stops: action.stops })) }
     default:
       return { trip }
   }
 }
 
-/** Re-time a day's stops from its start hour, keeping each visit's length and travel times */
-const reflowDay = (d: Day): Day => (d.stops.length ? { ...d, stops: reflowFrom(d.stops, toMin(dayStart(d))) } : d)
+/**
+ * Re-time a day's stops, keeping each visit's length and travel times. Starts at the day's own start
+ * hour if one was set, otherwise where the day already started (so removing the first stop doesn't
+ * jump the day to the default 10:00).
+ */
+const reflowDay = (d: Day, previousFirstStart?: string): Day => {
+  if (!d.stops.length) return d
+  const start = d.startTime ?? previousFirstStart ?? d.stops[0].start ?? dayStart(d)
+  return { ...d, stops: reflowFrom(d.stops, toMin(start)) }
+}
 
 const mapDayOfStop = (trip: Trip, stopId: string, fn: (d: Day) => Day): Trip => ({
   ...trip,

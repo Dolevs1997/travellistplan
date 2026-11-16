@@ -10,7 +10,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronLeft, GripVertical, Plus } from 'lucide-react'
+import { ChevronLeft, GripVertical, Plus, Trash2 } from 'lucide-react'
 import type { Day, Stop, StopStatus, Trip } from '../data/types'
 import { freeSlot, isPastDay, slotPartLabel, stopStatus, timeRange, transitLabel } from '../data/helpers'
 import { href } from '../router'
@@ -22,9 +22,11 @@ interface Props {
   selectedStopId: string | null
   onSelect: (id: string) => void
   onReorder: (from: number, to: number) => void
+  /** Remove a stop from the day (the screen offers undo) */
+  onRemove: (id: string) => void
 }
 
-export default function Timeline({ trip, day, selectedStopId, onSelect, onReorder }: Props) {
+export default function Timeline({ trip, day, selectedStopId, onSelect, onReorder, onRemove }: Props) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -60,6 +62,7 @@ export default function Timeline({ trip, day, selectedStopId, onSelect, onReorde
                 trailingSlot={!!slot}
                 selected={s.id === selectedStopId}
                 onSelect={() => onSelect(s.id)}
+                onRemove={() => onRemove(s.id)}
               />
             ))}
           </ol>
@@ -94,6 +97,7 @@ function SortableStop({
   trailingSlot,
   selected,
   onSelect,
+  onRemove,
 }: {
   stop: Stop
   n: number
@@ -103,6 +107,7 @@ function SortableStop({
   trailingSlot: boolean
   selected: boolean
   onSelect: () => void
+  onRemove: () => void
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: stop.id,
@@ -171,6 +176,14 @@ function SortableStop({
           >
             <ChevronLeft size={20} aria-hidden="true" />
           </a>
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`הסרת ${stop.name} מהלו״ז`}
+            className="flex size-11 shrink-0 items-center justify-center rounded-tile text-muted hover:text-accent-2"
+          >
+            <Trash2 size={18} aria-hidden="true" />
+          </button>
           <button
             type="button"
             ref={setActivatorNodeRef}
