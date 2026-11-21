@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatc
 import { arrayMove } from '@dnd-kit/sortable'
 import { mockTrip } from '../data/mockTrip'
 import { DEFAULT_VISIT, dayStart, estimateTransit, fromMin, isoRange, nextStartAfter, reflowFrom, stopDuration, toMin } from '../data/helpers'
-import type { Activity, Day, Destination, Lodging, PlaceInfo, SavedRestaurant, Stop, Transit, Trip, TripExtras } from '../data/types'
+import type { Activity, Day, Destination, Lodging, PlaceInfo, SavedRestaurant, Stop, Transit, Trip, TripBrief, TripExtras } from '../data/types'
 
 /** What screens read: the active trip plus UI state */
 export interface State {
@@ -47,6 +47,7 @@ export type Action =
   | { type: 'setDaysDestination'; dayIds: string[]; destination: Destination }
   /** A proposal from the AI assistant the user approved: applied as one step, creating a trip if none is open */
   | { type: 'applyPlan'; ops: PlanOp[]; newTripId: string }
+  | { type: 'setBrief'; brief: TripBrief }
   | { type: 'setActiveTrip'; tripId: string }
   | { type: 'deleteTrip'; tripId: string }
   | { type: 'reset' }
@@ -289,6 +290,8 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
         trip: mapDayOfStop(trip, action.stopId, (d) => reflowDay({ ...d, stops: d.stops.filter((s) => s.id !== action.stopId) }, d.stops[0]?.start)),
         selectedStopId: null,
       }
+    case 'setBrief':
+      return { trip: { ...trip, brief: action.brief } }
     case 'setDaysDestination': {
       // Split the trip into legs: these days now take place in `destination`
       const ids = new Set(action.dayIds)

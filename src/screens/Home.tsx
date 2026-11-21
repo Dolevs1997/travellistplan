@@ -1,10 +1,13 @@
 import { useState } from 'react'
-import { ArrowLeft, Bell, Compass, MapPin, Plus, Search, Sparkles } from 'lucide-react'
+import { ArrowLeft, Bell, Compass, MapPin, Plus, Sparkles, Users } from 'lucide-react'
 import DestinationsMap from '../components/DestinationsMap'
 import { BottomNav, Fab, IconButton, ScreenHeader, Tag, cx } from '../components/ui'
 import { countdownLabel, daysUntil, isoInDays, tripRange, tripStats } from '../data/helpers'
 import type { Trip } from '../data/types'
 import { isSampleTrip, useTrip } from '../state/TripStore'
+import { loadDraft, startWizard } from './TripWizard'
+import { roomsText } from '../data/brief'
+import { DESTINATIONS } from '../data/destinations'
 import { href, navigate } from '../router'
 
 const greeting = () => {
@@ -14,6 +17,9 @@ const greeting = () => {
   if (h < 21) return 'ערב טוב'
   return 'לילה טוב'
 }
+
+/** An empty trip: the map then shows the whole world and no pins */
+const NO_TRIP: Trip = { id: '', name: '', destination: null, days: [], budget: { currency: 'EUR', categories: [] } }
 
 const planned = (t: Trip) => !!t.destination && t.days.length > 0
 
@@ -36,10 +42,14 @@ export default function Home() {
     dispatch({ type: 'setActiveTrip', tripId: id })
     navigate('/trip')
   }
-  const newTrip = () => {
-    dispatch({ type: 'createTrip', id: `trip-${Date.now().toString(36)}` })
-    navigate('/trip')
-  }
+  // New trips start in the wizard (where, who, when, how, how much)
+  const newTrip = () => startWizard()
+  const draft = loadDraft().brief
+  const draftWhere = draft.legs.length ? draft.legs.map((l) => l.destination.name).join(' · ') : ''
+  const draftWho = `${draft.adults} מבוגרים${draft.children.length ? ` + ${draft.children.length} ילדים` : ''} · ${roomsText(draft.rooms)}`
+  const quick = ['country-japan', 'country-thailand', 'country-italy', 'vienna', 'rome']
+    .map((id) => DESTINATIONS.find((d) => d.id === id))
+    .filter((d): d is NonNullable<typeof d> => !!d)
   const [notice, setNotice] = useState('')
   const flash = (msg: string) => {
     setNotice(msg)
@@ -59,15 +69,48 @@ export default function Home() {
           }
         />
 
-        {/* Starts a new trip; the destination search lives on the new-trip page */}
-        <button
-          type="button"
-          onClick={newTrip}
-          className="flex h-[52px] items-center gap-2.5 rounded-2xl border border-border bg-surface px-4 text-start text-[15px] text-muted transition-colors duration-200 ease-out hover:border-border-strong"
-        >
-          <Search size={20} aria-hidden="true" />
-          חפשו עיר, מדינה או אזור
-        </button>
+        {/* The whole world, with the next trip's route points on it (drag or zoom) */}
+        <div className="overflow-hidden rounded-phone border border-border bg-surface">
+          <DestinationsMap trip={trip ?? NO_TRIP} tall />
+        </div>
+
+        {/* Where and who, then the wizard builds the rest */}
+        <div className="overflow-hidden rounded-phone border border-border bg-surface">
+          <button type="button" onClick={newTrip} className="flex w-full items-center gap-3 p-4 text-start transition-colors duration-200 ease-out hover:bg-raised">
+            <MapPin size={22} className="shrink-0 text-accent" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span className="text-[13px] text-muted">לאן</span>
+              <span className={cx('truncate text-[18px] font-semibold', !draftWhere && 'text-muted')}>{draftWhere || 'עיר, אזור או מדינה'}</span>
+            </span>
+          </button>
+          <hr className="border-border" />
+          <button type="button" onClick={newTrip} className="flex w-full items-center gap-3 p-4 text-start transition-colors duration-200 ease-out hover:bg-raised">
+            <Users size={22} className="shrink-0 text-accent" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span className="text-[13px] text-muted">מי נוסע</span>
+              <span className="truncate text-[18px] font-semibold">{draftWho}</span>
+            </span>
+          </button>
+          <div className="p-4 pt-0">
+            <button type="button" onClick={newTrip} className="flex h-[52px] w-full items-center justify-center gap-2 rounded-tile bg-accent text-[16px] font-semibold text-on-accent">
+              בנו לי טיול
+              <ArrowLeft size={20} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-label="יעדים מהירים">
+          {quick.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => startWizard(d)}
+              className="h-10 shrink-0 whitespace-nowrap rounded-full border border-border-strong bg-surface px-4 text-[14px] font-medium hover:border-accent"
+            >
+              {d.name}
+            </button>
+          ))}
+        </div>
 
         {/* The AI trip assistant: recommendations from the web and trip changes after approval */}
         <a

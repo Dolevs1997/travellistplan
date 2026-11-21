@@ -12,6 +12,7 @@ import TripPlan from './screens/TripPlan'
 import NoTrip from './screens/NoTrip'
 import DayPlanner from './screens/DayPlanner'
 import Chat from './screens/Chat'
+import TripWizard from './screens/TripWizard'
 
 export default function App() {
   const route = useRoute()
@@ -37,6 +38,8 @@ export default function App() {
       return tripScreen(<TripPlan key={state.trip.id} />)
     case 'budget':
       return state.hasActiveTrip ? <Budget /> : <NoTrip tab="budget" />
+    case 'new':
+      return <TripWizard />
     case 'chat':
       return <Chat />
     case 'profile':

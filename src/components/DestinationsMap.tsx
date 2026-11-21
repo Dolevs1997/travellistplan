@@ -60,7 +60,7 @@ function group(map: MLMap, places: Place[]) {
  * World map for the Home trip card: drag with a finger to pan, pinch to zoom.
  * One pin per destination city; pins that would overlap merge into one.
  */
-export default function DestinationsMap({ trip }: { trip: Trip }) {
+export default function DestinationsMap({ trip, tall }: { trip: Trip; tall?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MLMap | null>(null)
   const [zoom, setZoom] = useState({ atMin: true, atMax: false })
@@ -70,12 +70,13 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
 
   useEffect(() => {
     const el = ref.current
-    if (!el || places.length === 0) return
+    if (!el) return
     // Fully zoomed out. Below zoom 0 MapLibre stops drawing the wrapped world copies and leaves
     // empty bands, so stay at 0: most of the world shows, and dragging wraps around seamlessly.
     const worldZoom = 0
-    const centerLng = places.reduce((n, p) => n + p.lng, 0) / places.length
-    const centerLat = places.reduce((n, p) => n + p.lat, 0) / places.length
+    // No destination yet: the whole world, nothing named
+    const centerLng = places.length ? places.reduce((n, p) => n + p.lng, 0) / places.length : 10
+    const centerLat = places.length ? places.reduce((n, p) => n + p.lat, 0) / places.length : 28
 
     let map: MLMap
     try {
@@ -156,7 +157,7 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, theme])
 
-  const label = places.length ? `מפת העולם עם היעדים: ${places.map((p) => p.name).join(', ')}. אפשר לגרור ולהגדיל.` : 'מפת הטיול'
+  const label = places.length ? `מפת העולם עם היעדים: ${places.map((p) => p.name).join(', ')}. אפשר לגרור ולהגדיל.` : 'מפת העולם. אפשר לגרור ולהגדיל.'
   const zoomBy = (delta: number) => {
     const map = mapRef.current
     if (!map) return
@@ -166,10 +167,10 @@ export default function DestinationsMap({ trip }: { trip: Trip }) {
     'flex size-11 items-center justify-center bg-surface/92 text-text transition-colors duration-200 ease-out hover:bg-raised disabled:text-muted/50'
 
   return (
-    <div className="relative h-[168px] w-full touch-none bg-map-bg" role="region" aria-label={label}>
+    <div className={`relative ${tall ? 'h-[230px]' : 'h-[168px]'} w-full touch-none bg-map-bg`} role="region" aria-label={label}>
       {/* maplibre-gl.css forces position:relative on the container, so size it explicitly */}
       <div ref={ref} className="h-full w-full" />
-      {places.length > 0 && (
+      {(
         <div className="absolute top-3 left-3 z-10 flex flex-col overflow-hidden rounded-tile border border-border shadow-[var(--float-shadow)]">
           <button type="button" aria-label="הגדלת המפה" disabled={zoom.atMax} onClick={() => zoomBy(1)} className={`${btn} border-b border-border`}>
             <Plus size={18} aria-hidden="true" />

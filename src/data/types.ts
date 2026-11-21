@@ -139,6 +139,32 @@ export interface TripExtras {
   activities: Activity[]
 }
 
+/** The answers of the new-trip wizard, kept on the trip (see src/data/brief.ts) */
+export interface TripBrief {
+  /** Destinations in order. With several, `nights` sets the length; with one, the dates do */
+  legs: { destination: Destination; nights: number }[]
+  multi: boolean
+  adults: number
+  /** Age of each child */
+  children: number[]
+  rooms: number
+  start: string
+  end: string
+  /** Only the month is known: `start` is a placeholder inside that month */
+  monthOnly: boolean
+  flightsBooked: boolean
+  pace: 'relaxed' | 'balanced' | 'packed'
+  kosher: boolean
+  mustSee: string[]
+  interests: string[]
+  localTransport: string[]
+  intercity: string[]
+  tier: 'budget' | 'comfort' | 'premium' | 'custom'
+  customBudget?: number
+  /** Flight price per person (ILS), when the user knows it */
+  flightPerPerson?: number
+}
+
 export interface Trip {
   id: string
   name: string
@@ -151,6 +177,8 @@ export interface Trip {
   days: Day[]
   /** Demo "now": which stop the traveller is currently at (none before the trip starts) */
   progress?: { dayId: string; stopId: string }
+  /** What the user said in the new-trip wizard */
+  brief?: TripBrief
   budget: { currency: 'EUR'; categories: BudgetCategory[] }
 }
 

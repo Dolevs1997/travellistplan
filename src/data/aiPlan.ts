@@ -185,6 +185,12 @@ export function tripContext(trip: Trip | null, location: { lat: number; lng: num
     const stops = d.stops.length ? d.stops.map((s) => `${s.start}-${s.end} ${s.name} [${s.kind}]`).join('; ') : 'nothing planned'
     lines.push(`Day ${i + 1} (${d.date}) in ${where}, hours ${hours}: ${stops}`)
   })
+  if (trip.brief) {
+    const b = trip.brief
+    lines.push(
+      `The user's questionnaire: ${b.adults} adults${b.children.length ? `, children aged ${b.children.join(', ')}` : ''}, ${b.rooms} rooms; pace ${b.pace}; kosher ${b.kosher ? 'yes' : 'no'}; interests: ${b.interests.join(', ') || 'none given'}; must-see: ${b.mustSee.join(', ') || 'none'}; budget level ${b.tier}${b.customBudget ? ` (${b.customBudget} ILS)` : ''}.`,
+    )
+  }
   const lodgings = trip.lodgings ?? []
   if (lodgings.length) lines.push(`Lodging: ${lodgings.map((l) => `${l.name}${l.area ? ` (${l.area})` : ''} ${l.checkIn} to ${l.checkOut}`).join('; ')}`)
   const rests = trip.restaurants ?? []

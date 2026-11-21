@@ -5,6 +5,7 @@ import { useTrip } from '../state/TripStore'
 import { describeOp, parseProposal, parseQuestions, tripContext, type Proposal, type Question } from '../data/aiPlan'
 import { ChatHttpError, setAccessCode, streamChat, type AssistantBlock, type ChatMessage } from '../data/chatClient'
 import { href } from '../router'
+import { CHAT_SEED_KEY } from './TripWizard'
 
 /**
  * The trip assistant. Answers questions with web search (restaurants near you, lodging with prices and
@@ -112,6 +113,26 @@ export default function Chat() {
   }, [saved.messages.length, live?.text, error])
 
   useEffect(() => () => abortRef.current?.abort(), [])
+
+  // The new-trip wizard hands over its answers: start a fresh conversation with them.
+  // Deferred a tick so a development double-mount doesn't abort the request it just started.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      let seed: string | null = null
+      try {
+        seed = sessionStorage.getItem(CHAT_SEED_KEY)
+        sessionStorage.removeItem(CHAT_SEED_KEY)
+      } catch {
+        /* ignore */
+      }
+      if (!seed) return
+      const messages: ChatMessage[] = [{ role: 'user', content: seed }]
+      setSaved({ messages, decisions: {}, answers: {} })
+      void run(messages)
+    }, 0)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const busy = !!live
 
@@ -417,7 +438,8 @@ function MessageView({
             .filter((b) => b.type === 'text')
             .map((b) => (b as { text: string }).text)
             .join('\n')
-    return text ? <Bubble role="user">{text}</Bubble> : null
+    // The wizard's brief is long and structured: show a short line instead
+    return text ? <Bubble role="user">{text.startsWith('[WIZARD BRIEF]') ? 'הפרטים מהשאלון נשלחו לעוזר. הוא מכין הצעה לטיול.' : text}</Bubble> : null
   }
   const blocks = (typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : message.content) as AssistantBlock[]
   const text = blocks
