@@ -203,6 +203,31 @@ export function reflowFrom(stops: Stop[], startMin: number): Stop[] {
   })
 }
 
+/**
+ * Put a stop into a day at position `index`, at its own start time. Travel to and from it is estimated;
+ * later stops move only if they would now overlap (and only by as much as needed). Returns the new stops
+ * and how many minutes the first moved stop moved (0: nothing moved).
+ */
+export function insertStop(stops: Stop[], index: number, stop: Stop): { stops: Stop[]; shift: number } {
+  const before = stops.slice(0, index).map((s, i) => (i === index - 1 ? { ...s, transitToNext: estimateTransit(s, stop) } : s))
+  const rest = stops.slice(index)
+  const placed: Stop = rest[0] ? { ...stop, transitToNext: estimateTransit(stop, rest[0]) } : { ...stop, transitToNext: undefined }
+  let t = roundUpTo5(toMin(placed.end) + (placed.transitToNext?.minutes ?? 0))
+  let shift = 0
+  const moved = rest.map((s) => {
+    if (toMin(s.start) >= t) {
+      t = Number.NEGATIVE_INFINITY // everything after a stop that fits stays where it is
+      return s
+    }
+    const by = t - toMin(s.start)
+    if (!shift) shift = by
+    const next = { ...s, start: fromMin(t), end: fromMin(t + stopDuration(s)) }
+    t = roundUpTo5(t + stopDuration(s) + (s.transitToNext?.minutes ?? 15))
+    return next
+  })
+  return { stops: [...before, placed, ...moved], shift }
+}
+
 export const nextStartAfter = (stops: Stop[], travelMin: number, dayStartMin = toMin(DEFAULT_DAY_START)) =>
   stops.length === 0 ? dayStartMin : roundUpTo5(toMin(stops[stops.length - 1].end) + travelMin)
 

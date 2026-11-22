@@ -13,6 +13,16 @@ export const REGION_LABEL: Record<Region, string> = {
   'africa-me': 'אפריקה והמזרח התיכון',
 }
 
+/** Search the built-in destinations: name prefix first, then name contains, then country; `skip` hides ids already chosen */
+export function searchDestinations(query: string, limit = 6, skip: string[] = []) {
+  const q = query.trim()
+  if (!q) return []
+  const rank = (d: D) => (d.name.startsWith(q) ? 0 : d.name.includes(q) ? 1 : d.country.includes(q) ? 2 : 3)
+  return DESTINATIONS.filter((d) => !skip.includes(d.id) && rank(d) < 3)
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, limit)
+}
+
 /** Destinations a new trip can start from (city centre coordinates). */
 export const DESTINATIONS: D[] = [
   // Europe

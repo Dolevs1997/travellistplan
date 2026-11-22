@@ -2,8 +2,8 @@ import { planActions, type PlanOp } from '../data/aiPlan'
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react'
 import { arrayMove } from '@dnd-kit/sortable'
 import { mockTrip } from '../data/mockTrip'
-import { DEFAULT_VISIT, dayStart, estimateTransit, fromMin, isoRange, nextStartAfter, reflowFrom, stopDuration, toMin } from '../data/helpers'
-import type { Activity, Day, Destination, Lodging, PlaceInfo, SavedRestaurant, Stop, Transit, Trip, TripBrief, TripExtras } from '../data/types'
+import { DEFAULT_VISIT, dayStart, estimateTransit, fromMin, insertStop, isoRange, nextStartAfter, reflowFrom, stopDuration, toMin } from '../data/helpers'
+import type { Activity, Day, Destination, Expense, Lodging, PlaceInfo, SavedRestaurant, Stop, Transit, Trip, TripBrief, TripExtras } from '../data/types'
 
 /** What screens read: the active trip plus UI state */
 export interface State {
@@ -28,18 +28,29 @@ export type Action =
   | { type: 'reorder'; dayId: string; from: number; to: number }
   | { type: 'addFromSuggestion'; dayId: string; suggestionId: string }
   | { type: 'toggleBooked'; stopId: string }
+  | { type: 'setNeedsBooking'; stopId: string; value: boolean }
   | { type: 'setNote'; stopId: string; note: string }
   | { type: 'moveStop'; stopId: string; toDayId: string }
-  | { type: 'addExpense'; categoryId: string; amount: number }
+  | { type: 'addExpense'; expense: Expense }
+  | { type: 'updateExpense'; id: string; patch: Partial<Omit<Expense, 'id'>> }
+  | { type: 'removeExpense'; id: string }
+  /** Planned amount per category id, in euros */
+  | { type: 'setPlanned'; planned: Record<string, number> }
+  /** A rebuilt route from the edit screen: each city's days and lodging moved with it */
+  | { type: 'setRoute'; destination: Destination; days: Day[]; lodgings: Lodging[] }
   | { type: 'createTrip'; id: string }
   | { type: 'setupTrip'; destination: Destination; startDate: string; endDate: string; extras: TripExtras }
   | { type: 'setTripDates'; startDate: string; endDate: string }
   | { type: 'addLodging'; item: Lodging }
+  | { type: 'updateLodging'; id: string; patch: Partial<Omit<Lodging, 'id'>> }
   | { type: 'addRestaurant'; item: SavedRestaurant }
   | { type: 'addActivity'; item: Activity }
   | { type: 'removeExtra'; list: keyof TripExtras; id: string }
   | { type: 'setDayHours'; dayId: string; start: string; end: string }
-  | { type: 'addPlace'; dayId: string; place: PlaceInfo; minutes?: number }
+  /** `start` ('HH:MM') puts the place at that time; without it, it goes after the day's last stop */
+  | { type: 'addPlace'; dayId: string; place: PlaceInfo; minutes?: number; start?: string }
+  /** A meal: at `index` in the day, at `start`; later stops move only if they'd overlap */
+  | { type: 'insertPlace'; dayId: string; place: PlaceInfo; index: number; start: string; minutes: number }
   | { type: 'setStopMinutes'; stopId: string; minutes: number }
   | { type: 'setTransit'; stopId: string; transit: Transit }
   | { type: 'removeStop'; stopId: string }
@@ -48,6 +59,7 @@ export type Action =
   /** A proposal from the AI assistant the user approved: applied as one step, creating a trip if none is open */
   | { type: 'applyPlan'; ops: PlanOp[]; newTripId: string }
   | { type: 'setBrief'; brief: TripBrief }
+  | { type: 'renameTrip'; name: string }
   | { type: 'setActiveTrip'; tripId: string }
   | { type: 'deleteTrip'; tripId: string }
   | { type: 'reset' }
@@ -190,6 +202,8 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
     }
     case 'toggleBooked':
       return { trip: mapStop(trip, action.stopId, (s) => ({ ...s, booked: !s.booked })) }
+    case 'setNeedsBooking':
+      return { trip: mapStop(trip, action.stopId, (s) => ({ ...s, needsBooking: action.value })) }
     case 'setNote':
       return { trip: mapStop(trip, action.stopId, (s) => ({ ...s, note: action.note })) }
     case 'moveStop': {
@@ -215,15 +229,16 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
       return { trip: { ...trip, days } }
     }
     case 'addExpense':
+      return { trip: { ...trip, expenses: [...(trip.expenses ?? []), action.expense] } }
+    case 'updateExpense':
+      return { trip: { ...trip, expenses: (trip.expenses ?? []).map((e) => (e.id === action.id ? { ...e, ...action.patch } : e)) } }
+    case 'removeExpense':
+      return { trip: { ...trip, expenses: (trip.expenses ?? []).filter((e) => e.id !== action.id) } }
+    case 'setPlanned':
       return {
         trip: {
           ...trip,
-          budget: {
-            ...trip.budget,
-            categories: trip.budget.categories.map((c) =>
-              c.id === action.categoryId ? { ...c, spent: Math.round((c.spent + action.amount) * 100) / 100 } : c,
-            ),
-          },
+          budget: { ...trip.budget, categories: trip.budget.categories.map((c) => (c.id in action.planned ? { ...c, planned: action.planned[c.id] } : c)) },
         },
       }
     case 'setupTrip': {
@@ -232,10 +247,26 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
       const base = withDates({ ...trip, name: `טיול ל${destination.name}`, destination, days: [] }, startDate, endDate)
       return { trip: { ...base, ...extras } }
     }
+    case 'setRoute': {
+      const ids = new Set(action.days.map((d) => d.id))
+      const keepDay = <T extends { dayId?: string }>(x: T): T => (x.dayId && !ids.has(x.dayId) ? { ...x, dayId: undefined } : x)
+      const next: Trip = {
+        ...trip,
+        destination: action.destination,
+        days: action.days,
+        lodgings: action.lodgings,
+        progress: trip.progress && action.days.some((d) => d.stops.some((s) => s.id === trip.progress?.stopId)) ? trip.progress : undefined,
+        restaurants: (trip.restaurants ?? []).map(keepDay),
+        activities: (trip.activities ?? []).map(keepDay),
+      }
+      return { trip: { ...next, name: autoName(next) } }
+    }
     case 'setTripDates':
       return { trip: withDates(trip, action.startDate, action.endDate) }
     case 'addLodging':
       return { trip: { ...trip, lodgings: [...(trip.lodgings ?? []), action.item] } }
+    case 'updateLodging':
+      return { trip: { ...trip, lodgings: (trip.lodgings ?? []).map((l) => (l.id === action.id ? { ...l, ...action.patch } : l)) } }
     case 'addRestaurant':
       return { trip: { ...trip, restaurants: [...(trip.restaurants ?? []), action.item] } }
     case 'addActivity':
@@ -250,6 +281,35 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
       const { place } = action
       const id = `p-${place.ref.replace(/\W/g, '')}-${Date.now().toString(36)}`
       const next = mapDay(trip, action.dayId, (d) => {
+        if (action.start) {
+          // At a chosen time: slot it in by start time, and fix the travel to and from it
+          const minutes = action.minutes ?? DEFAULT_VISIT[place.kind]
+          const at = toMin(action.start)
+          const stop: Stop = {
+            id,
+            name: place.name,
+            area: place.address ?? place.description ?? '',
+            lat: place.lat,
+            lng: place.lng,
+            kind: place.kind,
+            start: fromMin(at),
+            end: fromMin(at + minutes),
+            info: place,
+          }
+          const stops = [...d.stops, stop].sort((a, b) => toMin(a.start) - toMin(b.start))
+          const i = stops.indexOf(stop)
+          return {
+            ...d,
+            stops: stops.map((s, j) => {
+              if (j === i - 1) return { ...s, transitToNext: estimateTransit(s, stop) }
+              if (j === i) {
+                const after = stops[i + 1]
+                return after ? { ...s, transitToNext: estimateTransit(s, after) } : s
+              }
+              return s
+            }),
+          }
+        }
         const prev = d.stops[d.stops.length - 1]
         const travel = prev ? estimateTransit(prev, place) : undefined
         const minutes = action.minutes ?? DEFAULT_VISIT[place.kind]
@@ -269,6 +329,23 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
         return { ...d, stops: [...stops, stop] }
       })
       return { trip: next, selectedStopId: id }
+    }
+    case 'insertPlace': {
+      const { place } = action
+      const id = `p-${place.ref.replace(/\W/g, '')}-${Date.now().toString(36)}`
+      const at = toMin(action.start)
+      const stop: Stop = {
+        id,
+        name: place.name,
+        area: place.address ?? place.description ?? '',
+        lat: place.lat,
+        lng: place.lng,
+        kind: place.kind,
+        start: fromMin(at),
+        end: fromMin(at + action.minutes),
+        info: place,
+      }
+      return { trip: mapDay(trip, action.dayId, (d) => ({ ...d, stops: insertStop(d.stops, Math.max(0, Math.min(action.index, d.stops.length)), stop).stops })) }
     }
     case 'setStopMinutes':
       return {
@@ -292,6 +369,8 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
       }
     case 'setBrief':
       return { trip: { ...trip, brief: action.brief } }
+    case 'renameTrip':
+      return { trip: { ...trip, name: action.name.trim() || trip.name } }
     case 'setDaysDestination': {
       // Split the trip into legs: these days now take place in `destination`
       const ids = new Set(action.dayIds)
@@ -377,9 +456,9 @@ function reducer(store: Store, action: Action): Store {
       if (res.trip === active) return store
       const next: Store = { ...store, trips: store.trips.map((t) => (t.id === active.id ? res.trip : t)) }
       if (res.selectedStopId !== undefined) next.selectedStopId = res.selectedStopId
-      if (action.type === 'addFromSuggestion' || action.type === 'addPlace') next.activeDayId = action.dayId
+      if (action.type === 'addFromSuggestion' || action.type === 'addPlace' || action.type === 'insertPlace') next.activeDayId = action.dayId
       if (action.type === 'setupTrip') next.activeDayId = res.trip.days[0]?.id ?? ''
-      if (action.type === 'setTripDates' && !res.trip.days.some((d) => d.id === store.activeDayId)) {
+      if ((action.type === 'setTripDates' || action.type === 'setRoute') && !res.trip.days.some((d) => d.id === store.activeDayId)) {
         next.activeDayId = res.trip.progress?.dayId ?? res.trip.days[0]?.id ?? ''
         next.selectedStopId = null
       }

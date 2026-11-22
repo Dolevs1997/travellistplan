@@ -6,9 +6,9 @@ export type TransitMode = 'walk' | 'tram' | 'bus' | 'metro' | 'train' | 'car'
  * a Google Places id can be added later as another source).
  */
 export interface PlaceInfo {
-  /** 'ai': added by the chat assistant after the user approved it */
-  source: 'wikidata' | 'osm' | 'ai'
-  /** Wikidata id (Q…) or OSM id ("node/123") */
+  /** 'ai': added by the chat assistant after the user approved it; 'google': from the add-places recommendations */
+  source: 'wikidata' | 'osm' | 'ai' | 'google'
+  /** Wikidata id (Q…), OSM id ("node/123") or Google place id */
   ref: string
   name: string
   kind: StopKind
@@ -31,6 +31,11 @@ export interface PlaceInfo {
   website?: string
   phone?: string
   cuisine?: string
+  /** From Google: average rating, number of reviews, opening hours per weekday (Monday first) and its Maps page */
+  rating?: number
+  ratingCount?: number
+  hoursText?: string[]
+  mapsUrl?: string
 }
 export type StopStatus = 'done' | 'current' | 'upcoming'
 
@@ -94,6 +99,26 @@ export interface BudgetCategory {
   planned: number
 }
 
+/** One expense. Amounts are kept in euros (the trip's budget currency); the screen can show shekels */
+export interface Expense {
+  id: string
+  title: string
+  categoryId: string
+  amount: number
+  /** How many (tickets ×2) */
+  qty?: number
+  /** ISO date and "HH:MM"; a prepaid expense (flights, a hotel) may have neither */
+  date?: string
+  time?: string
+  /** The stop it was spent at */
+  stopId?: string
+  /** Paid before the trip */
+  prepaid?: boolean
+  /** A small photo of the receipt (JPEG data URL) */
+  receipt?: string
+  createdAt: number
+}
+
 export interface Destination {
   id: string
   name: string
@@ -116,6 +141,14 @@ export interface Lodging {
   /** ISO dates */
   checkIn: string
   checkOut: string
+  /** Where it is, when picked from the lodging map */
+  lat?: number
+  lng?: number
+  kind?: 'hotel' | 'guest' | 'hostel' | 'apartment'
+  /** The lodging-map place it was picked from (to mark it in the list) */
+  placeId?: string
+  /** Booking number, notes, check-in time… */
+  note?: string
 }
 
 export interface SavedRestaurant {
@@ -139,6 +172,12 @@ export interface TripExtras {
   activities: Activity[]
 }
 
+export interface RentalChoice {
+  company: string
+  pickup: string
+  dropoff: string
+}
+
 /** The answers of the new-trip wizard, kept on the trip (see src/data/brief.ts) */
 export interface TripBrief {
   /** Destinations in order. With several, `nights` sets the length; with one, the dates do */
@@ -158,11 +197,23 @@ export interface TripBrief {
   mustSee: string[]
   interests: string[]
   localTransport: string[]
+  /** Keep walks between stops short (about 15 minutes) */
+  shortWalks?: boolean
   intercity: string[]
   tier: 'budget' | 'comfort' | 'premium' | 'custom'
   customBudget?: number
   /** Flight price per person (ILS), when the user knows it */
   flightPerPerson?: number
+  /** How to get from each destination to the next: transfers[i] is leg i → leg i+1 */
+  transfers?: string[]
+  /** Ticket details the user already has for a transfer (same index as `transfers`) */
+  transferTickets?: string[]
+  /** How to get around inside each destination, by destination id (falls back to localTransport) */
+  cityTransport?: Record<string, string>
+  /** Chosen rental car per destination id */
+  rentals?: Record<string, RentalChoice>
+  /** "I already have a route": the user builds the days themselves after the wizard */
+  selfBuild?: boolean
 }
 
 export interface Trip {
@@ -180,5 +231,7 @@ export interface Trip {
   /** What the user said in the new-trip wizard */
   brief?: TripBrief
   budget: { currency: 'EUR'; categories: BudgetCategory[] }
+  /** Itemized expenses (older trips may only have per-category totals in `budget`) */
+  expenses?: Expense[]
 }
 
