@@ -312,7 +312,7 @@ const hoursCache = new Map<string, Promise<PlaceHours>>()
 
 /** Opening hours and practical info from OpenStreetMap (looked up by Wikidata id when needed) */
 export function placeHours(info: PlaceInfo): Promise<PlaceHours> {
-  if ((info.source === 'osm' && info.openingHours) || info.source === 'ai')
+  if ((info.source === 'osm' && info.openingHours) || info.source === 'ai' || info.source === 'google')
     return Promise.resolve({ hours: info.openingHours, website: info.website, phone: info.phone })
   const key = `${info.source}:${info.ref}`
   const hit = hoursCache.get(key)
@@ -522,8 +522,8 @@ async function fetchDetails(info: PlaceInfo): Promise<PlaceDetails> {
     }
   }
 
-  // Places the assistant added have only a name and coordinates: find their Wikipedia article by name
-  if (!article && info.source === 'ai') article = await articleByName(info.name).catch(() => undefined)
+  // Places the assistant added, or picked from Google, have no Wikipedia link: find their article by name
+  if (!article && (info.source === 'ai' || info.source === 'google')) article = await articleByName(info.name).catch(() => undefined)
 
   let summary: string | undefined
   if (article) {

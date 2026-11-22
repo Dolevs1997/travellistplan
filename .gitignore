@@ -25,3 +25,8 @@ dist-ssr
 
 # Netlify
 .netlify
+
+# Local secrets (API keys) – never commit
+.env
+.env.*
+!.env.example

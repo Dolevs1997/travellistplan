@@ -5,17 +5,17 @@ import type { PlanOp } from './aiPlan'
 
 /** The answers of the new-trip wizard (where, who, when, how, how much), also kept on the trip */
 
-export const PACE_LABEL = { relaxed: 'רגוע', balanced: 'מאוזן', packed: 'עמוס' } as const
+export const PACE_LABEL = { relaxed: 'רגוע', balanced: 'מאוזן', packed: 'אינטנסיבי' } as const
 export const PACE_HINT = {
-  relaxed: '2–3 מקומות ביום, הרבה זמן להתאוורר ולשבת בבית קפה',
-  balanced: '4–5 מקומות ביום, עם הפסקות בין לבין',
-  packed: '6 מקומות ומעלה, כמה שיותר לראות',
+  relaxed: '2 עצירות ביום',
+  balanced: '3–4 עצירות',
+  packed: '5+ עצירות',
 } as const
-export const TIER_LABEL = { budget: 'חסכוני', comfort: 'נוח', premium: 'פרימיום' } as const
+export const TIER_LABEL = { budget: 'חסכוני', comfort: 'נוח', premium: 'מפנק' } as const
 export const TIER_HINT = { budget: 'מלון 3★ · פשוט', comfort: 'מלון 4★ · מרכזי', premium: 'מלון 5★' } as const
 
-export const INTERESTS = ['תרבות והיסטוריה', 'אוכל ופינוקים', 'פעילויות לילדים', 'טבע', 'שופינג', 'חיי לילה', 'הרפתקאות']
-export const LOCAL_TRANSPORT = ['תחבורה ציבורית', 'הליכה', 'מוניות', 'השכרת רכב']
+export const INTERESTS = ['היסטוריה ותרבות', 'אוכל', 'טבע', 'תצפיות', 'חיי לילה', 'שופינג']
+export const LOCAL_TRANSPORT = ['תחבורה ציבורית', 'רכב שכור', 'מוניות']
 export const INTERCITY_TRANSPORT = ['רכבת', 'טיסה פנימית', 'רכב שכור', 'אוטובוס']
 
 export const emptyBrief = (): TripBrief => ({
@@ -32,7 +32,8 @@ export const emptyBrief = (): TripBrief => ({
   kosher: false,
   mustSee: [],
   interests: [],
-  localTransport: ['תחבורה ציבורית', 'הליכה'],
+  localTransport: ['תחבורה ציבורית'],
+  shortWalks: true,
   intercity: [],
   tier: 'comfort',
 })
@@ -53,12 +54,12 @@ export const travelers = (b: TripBrief) => b.adults + b.children.length
 
 /** Return date: derived from the route's nights when there are several destinations */
 export function endDateOf(b: TripBrief) {
-  return b.multi && b.legs.length > 1 && b.start ? addDays(b.start, totalNights(b)) : b.end
+  return b.multi && b.legs.length > 0 && b.start ? addDays(b.start, totalNights(b)) : b.end
 }
 
 /** Nights in each destination; a single destination takes them from the dates */
 export function legsWithNights(b: TripBrief) {
-  if (b.multi && b.legs.length > 1) return b.legs
+  if (b.multi && b.legs.length > 0) return b.legs
   const end = endDateOf(b)
   const nights = b.start && end ? Math.max(1, isoRange(b.start, end).length - 1) : 1
   return b.legs.slice(0, 1).map((l) => ({ ...l, nights }))
@@ -197,30 +198,6 @@ export function skeletonOps(b: TripBrief): PlanOp[] {
       })
   })
   return ops
-}
-
-const dest = (d: Destination) => `${d.name}${d.kind === 'country' ? ' (מדינה שלמה)' : d.country ? `, ${d.country}` : ''}` + ` [lat ${d.lat.toFixed(4)}, lng ${d.lng.toFixed(4)}]`
-
-/** The finished questionnaire as the first message to the assistant */
-export function briefMessage(b: TripBrief): string {
-  const legs = legDates(b)
-  const lines = [
-    '[WIZARD BRIEF] השאלון הושלם. בנו הצעה מלאה לטיול לפי הפרטים, בלי לשאול שאלות נוספות.',
-    `יעדים לפי הסדר: ${legs.map((l) => `${dest(l.leg.destination)} – ${l.leg.nights} לילות (${l.checkIn} עד ${l.checkOut})`).join(' ← ')}`,
-    b.monthOnly ? `תאריכים: רק חודש ידוע, בחרתי להתחיל ב-${b.start}` : `תאריכים: ${b.start} עד ${endDateOf(b)}${b.flightsBooked ? ' (הטיסות כבר הוזמנו)' : ''}`,
-    `נוסעים: ${b.adults} מבוגרים${b.children.length ? `, ילדים בגילאים ${b.children.join(', ')}` : ''}; ${roomsText(b.rooms)}`,
-    `קצב: ${PACE_LABEL[b.pace]} (${PACE_HINT[b.pace]})`,
-    `מסעדות כשרות: ${b.kosher ? 'כן, בכל ארוחה' : 'לא נדרש'}`,
-    b.mustSee.length ? `מקומות שחייבים לבקר בהם: ${b.mustSee.join(', ')}` : 'מקומות חובה: אין, בחרו אתם',
-    b.interests.length ? `תחומי עניין: ${b.interests.join(', ')}` : 'תחומי עניין: לא צוין',
-    `תחבורה בתוך הערים: ${b.localTransport.join(', ') || 'לא צוין'}`,
-    b.intercity.length && legs.length > 1 ? `בין הערים: ${b.intercity.join(', ')}` : '',
-    b.tier === 'custom' && b.customBudget
-      ? `תקציב כולל: ${money(b.customBudget)}`
-      : `רמת תקציב: ${TIER_LABEL[b.tier === 'custom' ? 'comfort' : b.tier]} (${TIER_HINT[b.tier === 'custom' ? 'comfort' : b.tier]}), בערך ${money(estimate(b, b.tier === 'custom' ? 'comfort' : b.tier).total)} (הערכה כללית${b.flightPerPerson ? '' : ', בלי טיסות'})`,
-    'בנו את הטיול עם propose_trip_changes: setup_trip ליעד הראשון, set_destination לשאר היעדים, ו-add_stop לכל יום לפי הקצב והתחומים. אפשר להוסיף add_lodging רק לנכסים שמצאתם בחיפוש.',
-  ]
-  return lines.filter(Boolean).join('\n')
 }
 
 /** Short summary chips shown above each step */

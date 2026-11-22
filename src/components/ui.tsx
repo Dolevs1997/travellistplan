@@ -183,7 +183,8 @@ export function StopNode({ status, n }: { status: StopStatus; n: number }) {
 
 const NAV = [
   { id: 'home', label: 'בית', to: '/', icon: House },
-  { id: 'map', label: 'מפה', to: '/trip', icon: MapIcon },
+  // "What's around": recommendations near you or today's stops (the route map is under the schedule)
+  { id: 'map', label: 'מפה', to: '/nearby', icon: MapIcon },
   { id: 'schedule', label: 'לו״ז', to: '/trip/schedule', icon: CalendarDays },
   { id: 'budget', label: 'תקציב', to: '/budget', icon: Wallet },
   { id: 'profile', label: 'פרופיל', to: '/profile', icon: User },

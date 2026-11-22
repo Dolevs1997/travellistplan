@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Drawer } from 'vaul'
-import { ArrowRight, ClipboardList, Sparkles, Footprints, ListPlus, LocateFixed, Map as MapIcon, Navigation, Plus, Share2, UtensilsCrossed } from 'lucide-react'
+import { ArrowRight, CalendarRange, ClipboardList, Footprints, ListPlus, LocateFixed, Map as MapIcon, Navigation, Plus, Share2, UtensilsCrossed } from 'lucide-react'
 import TripMap from '../components/TripMap'
-import Restaurants from '../components/Restaurants'
+import DayMeals from '../components/DayMeals'
 import { useRemoveWithUndo } from '../components/UndoRemove'
 import { nearbyRestaurantsUrl } from '../data/restaurants'
 import Timeline from '../components/Timeline'
 import { DayChips, IconButton, IconTile, MODE_ICON, StopNode, cx } from '../components/ui'
 import { useTrip } from '../state/TripStore'
+import { usePlacePhoto } from '../data/cityPhoto'
 import { directionsUrl, durationLabel, formatDayLong, freeSlot, isPastDay, stopDuration, stopStatus, timeRange, transitLabel } from '../data/helpers'
 import type { Day, Trip } from '../data/types'
 import { href, navigate } from '../router'
@@ -108,20 +109,17 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
       />
 
       <div className="absolute inset-x-4 top-[max(16px,env(safe-area-inset-top))] z-10 mx-auto flex max-w-[528px] items-center gap-2">
-        <IconButton label="חזרה למסך הבית" to="/" variant="floating">
+        <IconButton label="חזרה" onClick={() => (history.length > 1 ? history.back() : navigate('/overview'))} variant="floating" className="!rounded-full !border-0 shadow-[var(--float-shadow)]">
           <ArrowRight size={20} aria-hidden="true" />
         </IconButton>
-        <div className="flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-tile border border-border bg-surface/92 px-3">
+        <div className="flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-surface px-3 shadow-[var(--float-shadow)]">
           <span className="truncate text-[15px] font-semibold">{trip.name}</span>
           <span className="shrink-0 rounded-full bg-accent/12 px-2.5 py-0.5 text-xs font-semibold text-accent">· יום {dayIndex + 1}</span>
         </div>
-        <IconButton label="פרטי הטיול: תאריכים, לינה, מסעדות ופעילויות" to="/plan" variant="floating">
+        <IconButton label="סקירת הטיול: ימים, לינה, מסעדות והתניידות" to="/overview" variant="floating" className="!rounded-full !border-0 shadow-[var(--float-shadow)]">
           <ClipboardList size={20} aria-hidden="true" />
         </IconButton>
-        <IconButton label="עוזר הטיול (AI)" to="/chat" variant="floating">
-          <Sparkles size={20} className="text-accent" aria-hidden="true" />
-        </IconButton>
-        <IconButton label="שיתוף הטיול" onClick={share} variant="floating">
+        <IconButton label="שיתוף הטיול" onClick={share} variant="floating" className="!rounded-full !border-0 shadow-[var(--float-shadow)]">
           <Share2 size={20} aria-hidden="true" />
         </IconButton>
       </div>
@@ -170,7 +168,7 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
         <Drawer.Portal>
           <Drawer.Content
             aria-describedby={undefined}
-            className="fixed inset-x-0 bottom-0 z-20 mx-auto flex h-full max-h-[97%] max-w-[560px] flex-col rounded-t-sheet border-t border-border bg-surface font-sans text-text shadow-sheet outline-none"
+            className="fixed inset-x-0 bottom-0 z-20 mx-auto flex h-full max-h-[97%] max-w-[560px] flex-col rounded-t-sheet border-t border-border bg-bg font-sans text-text shadow-sheet outline-none"
             dir="rtl"
           >
             <Drawer.Title className="sr-only">
@@ -200,12 +198,15 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
                     </div>
                     <div className="flex shrink-0 gap-2">
                       <a
-                        href={href(`/day/${day.id}`)}
+                        href={href(`/add/${day.id}`)}
                         className="flex h-11 items-center gap-1.5 rounded-tile bg-accent px-3 text-[14px] font-semibold text-on-accent"
                       >
                         <ListPlus size={18} aria-hidden="true" />
-                        תכנון היום
+                        הוספת מקומות
                       </a>
+                      <IconButton label="כל הלו״ז – כל ימי הטיול" to="/days" variant="raised" className="text-accent">
+                        <CalendarRange size={20} aria-hidden="true" />
+                      </IconButton>
                       <IconButton label="הצגה על המפה" onClick={() => changeSnap(PEEK)} variant="raised" className="text-accent">
                         <MapIcon size={20} aria-hidden="true" />
                       </IconButton>
@@ -222,7 +223,7 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
                       onRemove={(id) => removeStop(day, id)}
                     />
                   </div>
-                  <Restaurants day={day} />
+                  <DayMeals day={day} />
                 </>
               )}
             </div>
@@ -264,7 +265,7 @@ function PeekContent({
 
       {!focus ? (
         <a
-          href={href(`/day/${day.id}`)}
+          href={href(`/add/${day.id}`)}
           className="flex items-center gap-3 rounded-[20px] border-[1.5px] border-dashed border-accent-2 bg-accent-2/6 p-4 text-accent-2"
         >
           <span className="flex size-12 shrink-0 items-center justify-center rounded-tile bg-accent-2/14">
@@ -290,7 +291,7 @@ function PeekContent({
       ) : (
         slot &&
         focus && (
-          <a href={href(`/day/${day.id}`)} className="flex min-h-12 items-center gap-3 px-1 text-accent-2">
+          <a href={href(`/add/${day.id}`)} className="flex min-h-12 items-center gap-3 px-1 text-accent-2">
             <span className="flex size-8 items-center justify-center rounded-full border-2 border-dashed border-accent-2">
               <Plus size={16} aria-hidden="true" />
             </span>
@@ -313,7 +314,7 @@ function FocusCard({ trip, day, index, isNext, onAllDay }: { trip: Trip; day: Da
     status === 'current' ? `עכשיו · ${stop.start}` : status === 'done' ? `הושלם · ${stop.start}` : isNext ? `העצירה הבאה · ${stop.start}` : `עצירה ${index + 1} · ${stop.start}`
 
   return (
-    <article className="flex flex-col gap-3 rounded-[20px] border border-border bg-raised p-3.5">
+    <article className="flex flex-col gap-3 rounded-[20px] border border-border bg-surface p-3.5 shadow-[0_6px_18px_rgba(15,23,42,0.06)]">
       <div className="flex items-center justify-between gap-2">
         <span className={cx('text-xs font-semibold', status === 'done' ? 'text-muted' : 'text-accent')}>{label}</span>
         {leg && (
@@ -324,7 +325,7 @@ function FocusCard({ trip, day, index, isNext, onAllDay }: { trip: Trip; day: Da
         )}
       </div>
       <a href={href(`/place/${stop.id}`)} className="flex items-center gap-3">
-        <IconTile kind={stop.kind} />
+        <FocusThumb stop={stop} />
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-[17px] font-semibold">{stop.name}</span>
           <span className="text-[13px] text-muted">
@@ -351,5 +352,16 @@ function FocusCard({ trip, day, index, isNext, onAllDay }: { trip: Trip; day: Da
         </button>
       </div>
     </article>
+  )
+}
+
+/** The focus card's picture: the stop's photo when there is one, else its kind's icon tile */
+function FocusThumb({ stop }: { stop: Day['stops'][number] }) {
+  const photo = usePlacePhoto(stop.kind === 'food' ? undefined : stop.name, stop.info?.image, stop)
+  const [failed, setFailed] = useState(false)
+  return photo && !failed ? (
+    <img src={photo.src} alt="" onError={() => setFailed(true)} className="size-14 shrink-0 rounded-tile object-cover" />
+  ) : (
+    <IconTile kind={stop.kind} size={56} />
   )
 }

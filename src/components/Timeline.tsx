@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from "react";
 import {
   closestCenter,
   DndContext,
@@ -7,37 +7,60 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-} from '@dnd-kit/core'
-import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { ChevronLeft, GripVertical, Plus, Trash2 } from 'lucide-react'
-import type { Day, Stop, StopStatus, Trip } from '../data/types'
-import { freeSlot, isPastDay, slotPartLabel, stopStatus, timeRange, transitLabel } from '../data/helpers'
-import { href } from '../router'
-import { cx, MODE_ICON, StopNode, Tag } from './ui'
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical, Info, Navigation, Plus, Trash2 } from "lucide-react";
+import type { Day, Stop, StopStatus, Trip } from "../data/types";
+import {
+  directionsUrl,
+  freeSlot,
+  isPastDay,
+  slotPartLabel,
+  stopStatus,
+  timeRange,
+  transitLabel,
+} from "../data/helpers";
+import { href } from "../router";
+import { cx, IconTile, MODE_ICON, StopNode, Tag } from "./ui";
+import { usePlacePhoto } from "../data/cityPhoto";
 
 interface Props {
-  trip: Trip
-  day: Day
-  selectedStopId: string | null
-  onSelect: (id: string) => void
-  onReorder: (from: number, to: number) => void
+  trip: Trip;
+  day: Day;
+  selectedStopId: string | null;
+  onSelect: (id: string) => void;
+  onReorder: (from: number, to: number) => void;
   /** Remove a stop from the day (the screen offers undo) */
-  onRemove: (id: string) => void
+  onRemove: (id: string) => void;
 }
 
-export default function Timeline({ trip, day, selectedStopId, onSelect, onReorder, onRemove }: Props) {
+export default function Timeline({
+  trip,
+  day,
+  selectedStopId,
+  onSelect,
+  onReorder,
+  onRemove,
+}: Props) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-  const ids = day.stops.map((s) => s.id)
-  const slot = isPastDay(trip, day.id) ? null : freeSlot(day)
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+  const ids = day.stops.map((s) => s.id);
+  const slot = isPastDay(trip, day.id) ? null : freeSlot(day);
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return
-    onReorder(ids.indexOf(String(active.id)), ids.indexOf(String(over.id)))
-  }
+    if (!over || active.id === over.id) return;
+    onReorder(ids.indexOf(String(active.id)), ids.indexOf(String(over.id)));
+  };
 
   return (
     <div className="flex flex-col">
@@ -46,18 +69,28 @@ export default function Timeline({ trip, day, selectedStopId, onSelect, onReorde
         collisionDetection={closestCenter}
         onDragEnd={onDragEnd}
         accessibility={{
-          screenReaderInstructions: { draggable: 'כדי להזיז עצירה: רווח להרמה, חיצים להזזה, רווח שוב להנחה.' },
+          screenReaderInstructions: {
+            draggable:
+              "כדי להזיז עצירה: רווח להרמה, חיצים להזזה, רווח שוב להנחה.",
+          },
         }}
       >
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-          <ol aria-label="עצירות היום – אפשר לגרור לשינוי הסדר" className="flex flex-col">
+          <ol
+            aria-label="עצירות היום – אפשר לגרור לשינוי הסדר"
+            className="flex flex-col"
+          >
             {day.stops.map((s, i) => (
               <SortableStop
                 key={s.id}
                 stop={s}
                 n={i + 1}
                 status={stopStatus(trip, day.id, s.id)}
-                nextStatus={i < day.stops.length - 1 ? stopStatus(trip, day.id, day.stops[i + 1].id) : null}
+                nextStatus={
+                  i < day.stops.length - 1
+                    ? stopStatus(trip, day.id, day.stops[i + 1].id)
+                    : null
+                }
                 isLast={i === day.stops.length - 1}
                 trailingSlot={!!slot}
                 selected={s.id === selectedStopId}
@@ -75,17 +108,21 @@ export default function Timeline({ trip, day, selectedStopId, onSelect, onReorde
             <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
           </span>
           <a
-            href={href(`/day/${day.id}`)}
+            href={href(`/add/${day.id}`)}
             className="flex h-[52px] flex-1 items-center justify-center rounded-card border-[1.5px] border-dashed border-accent-2 bg-accent-2/6 px-3 text-center text-[15px] font-medium text-accent-2 transition-colors duration-200 ease-out hover:bg-accent-2/12"
           >
-            {slot.wholeDay ? 'היום פנוי – הוספת עצירה' : `${slotPartLabel(slot.start)} פנוי – הוספת עצירה`}
+            {slot.wholeDay
+              ? "היום פנוי – הוספת עצירה"
+              : `${slotPartLabel(slot.start)} פנוי – הוספת עצירה`}
           </a>
         </div>
       )}
 
-      {day.stops.length === 0 && !slot && <p className="text-muted">אין עצירות ביום הזה.</p>}
+      {day.stops.length === 0 && !slot && (
+        <p className="text-muted">אין עצירות ביום הזה.</p>
+      )}
     </div>
-  )
+  );
 }
 
 function SortableStop({
@@ -99,90 +136,153 @@ function SortableStop({
   onSelect,
   onRemove,
 }: {
-  stop: Stop
-  n: number
-  status: StopStatus
-  nextStatus: StopStatus | null
-  isLast: boolean
-  trailingSlot: boolean
-  selected: boolean
-  onSelect: () => void
-  onRemove: () => void
+  stop: Stop;
+  n: number;
+  status: StopStatus;
+  nextStatus: StopStatus | null;
+  isLast: boolean;
+  trailingSlot: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id: stop.id,
-  })
-  const ref = useRef<HTMLLIElement | null>(null)
+  });
+  const ref = useRef<HTMLLIElement | null>(null);
 
   useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [selected])
+    if (selected)
+      ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selected]);
 
   // Line below this node: teal while the next stop is already reached
-  const lineDone = nextStatus === 'done' || nextStatus === 'current'
-  const TransitIcon = stop.transitToNext ? MODE_ICON[stop.transitToNext.mode] : null
+  const lineDone = nextStatus === "done" || nextStatus === "current";
+  const TransitIcon = stop.transitToNext
+    ? MODE_ICON[stop.transitToNext.mode]
+    : null;
 
   return (
     <li
       ref={(el) => {
-        setNodeRef(el)
-        ref.current = el
+        setNodeRef(el);
+        ref.current = el;
       }}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cx('relative flex gap-3', isDragging && 'z-10 opacity-90')}
+      className={cx("relative flex gap-3", isDragging && "z-10 opacity-90")}
     >
       <div className="flex w-8 shrink-0 flex-col items-center pt-2.5">
         <StopNode status={status} n={n} />
-        {!isLast && <span className={cx('w-0.5 flex-1', lineDone ? 'bg-accent' : 'bg-border-strong', status === 'current' && 'mt-1.5')} />}
-        {isLast && trailingSlot && <span className="w-0 flex-1 border-s-2 border-dashed border-border-strong" />}
+        {!isLast && (
+          <span
+            className={cx(
+              "w-0.5 flex-1",
+              lineDone ? "bg-accent" : "bg-border-strong",
+              status === "current" && "mt-1.5",
+            )}
+          />
+        )}
+        {isLast && trailingSlot && (
+          <span className="w-0 flex-1 border-s-2 border-dashed border-border-strong" />
+        )}
       </div>
 
-      <div className={cx('min-w-0 flex-1', isLast && 'pb-3.5')}>
+      <div className={cx("min-w-0 flex-1", isLast && "pb-3.5")}>
         <article
-          aria-current={status === 'current' ? 'step' : undefined}
+          aria-current={status === "current" ? "step" : undefined}
           className={cx(
-            'flex items-center gap-1 rounded-card border bg-raised ps-3.5 pe-1 transition-[border-color,box-shadow] duration-200 ease-out',
-            status === 'current' ? 'border-accent' : 'border-border',
-            selected && 'shadow-[0_0_0_2px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]',
-            isDragging && 'shadow-[0_16px_32px_rgba(0,0,0,0.25)]',
+            "flex items-center gap-1 rounded-card border bg-surface ps-2 pe-1 transition-[border-color,box-shadow] duration-200 ease-out",
+            status === "current"
+              ? "border-[1.5px] border-accent shadow-[0_6px_18px_color-mix(in_srgb,var(--color-accent)_14%,transparent)]"
+              : "border-border",
+            selected &&
+              "shadow-[0_0_0_2px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]",
+            isDragging && "shadow-[0_16px_32px_rgba(0,0,0,0.25)]",
           )}
         >
-          <button
-            type="button"
-            onClick={onSelect}
-            aria-pressed={selected}
-            className="flex min-w-0 flex-1 flex-col items-start gap-1.5 py-3 text-start"
-          >
-            <span className="flex flex-wrap items-center gap-2">
-              <span className={cx('text-base font-semibold', status === 'done' ? 'text-muted' : 'text-text')}>{stop.name}</span>
-              {status === 'current' && (
-                <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-on-accent">עכשיו</span>
-              )}
-            </span>
-            <span className="text-[13px] text-muted">
-              {timeRange(stop.start, stop.end)}
-            </span>
-            {(stop.heritage || stop.needsBooking) && (
-              <span className="flex flex-wrap gap-1.5">
-                {stop.heritage && <Tag tone="accent">אתר מורשת</Tag>}
-                {stop.needsBooking && <Tag tone={stop.booked ? 'muted' : 'orange'}>{stop.booked ? 'הוזמן' : 'הזמנה מראש'}</Tag>}
-              </span>
-            )}
-          </button>
           <a
             href={href(`/place/${stop.id}`)}
             aria-label={`פרטים על ${stop.name}`}
-            className="flex size-11 shrink-0 items-center justify-center rounded-tile text-muted hover:text-text"
+            className="shrink-0 rounded-tile"
           >
-            <ChevronLeft size={20} aria-hidden="true" />
+            <StopThumb
+              stop={stop}
+              tall={stop.heritage || stop.needsBooking || status === "current"}
+            />
           </a>
+          <div className="flex min-w-0 flex-1 flex-col items-start gap-2 py-3 ps-1">
+            <button
+              type="button"
+              onClick={onSelect}
+              aria-pressed={selected}
+              className="flex w-full min-w-0 flex-col items-start gap-1.5 text-start"
+            >
+              <span className="flex flex-wrap items-center gap-2">
+                <span
+                  className={cx(
+                    "text-base font-semibold",
+                    status === "done" ? "text-muted" : "text-text",
+                  )}
+                >
+                  {stop.name}
+                </span>
+                {status === "current" && (
+                  <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-on-accent">
+                    עכשיו
+                  </span>
+                )}
+              </span>
+              <span className="text-[13px] text-muted">
+                {timeRange(stop.start, stop.end)}
+              </span>
+              {(stop.heritage || stop.needsBooking) && (
+                <span className="flex flex-wrap gap-1.5">
+                  {stop.heritage && <Tag tone="accent">אתר מורשת</Tag>}
+                  {stop.needsBooking && (
+                    <Tag tone={stop.booked ? "muted" : "orange"}>
+                      {stop.booked ? "הוזמן" : "הזמנה מראש"}
+                    </Tag>
+                  )}
+                </span>
+              )}
+            </button>
+            {/* Straight to the place's page (photos, rating, hours, tickets) or to directions */}
+            <span className="flex gap-1.5">
+              <a
+                href={href(`/place/${stop.id}`)}
+                aria-label={`פרטים על ${stop.name}`}
+                className="flex h-8 items-center gap-1 rounded-full border border-border-strong px-2.5 text-xs font-semibold text-text transition-colors duration-150 hover:bg-raised"
+              >
+                <Info size={13} aria-hidden="true" />
+                פרטים
+              </a>
+              <a
+                href={directionsUrl(stop)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`ניווט אל ${stop.name} (נפתח בגוגל מפות)`}
+                className="flex h-8 items-center gap-1 rounded-full bg-accent px-2.5 text-xs font-semibold text-on-accent"
+              >
+                <Navigation size={13} aria-hidden="true" />
+                ניווט
+              </a>
+            </span>
+          </div>
           <button
             type="button"
             onClick={onRemove}
             aria-label={`הסרת ${stop.name} מהלו״ז`}
-            className="flex size-11 shrink-0 items-center justify-center rounded-tile text-muted hover:text-accent-2"
+            className="flex h-11 w-8 shrink-0 items-center justify-center rounded-tile text-muted hover:text-accent-2"
           >
-            <Trash2 size={18} aria-hidden="true" />
+            <Trash2 size={17} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -191,7 +291,7 @@ function SortableStop({
             {...listeners}
             aria-label={`גרירה לשינוי סדר: ${stop.name}`}
             data-vaul-no-drag
-            className="flex size-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-tile text-muted hover:text-text active:cursor-grabbing"
+            className="flex h-11 w-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-tile text-muted hover:text-text active:cursor-grabbing"
           >
             <GripVertical size={18} aria-hidden="true" />
           </button>
@@ -206,5 +306,28 @@ function SortableStop({
         {!isLast && !stop.transitToNext && <div className="h-3" />}
       </div>
     </li>
-  )
+  );
+}
+
+/** The stop's photo (its own image, or the Wikipedia page of its name); the kind's icon tile when there is none */
+function StopThumb({ stop, tall }: { stop: Stop; tall?: boolean }) {
+  const photo = usePlacePhoto(
+    stop.kind === "food" ? undefined : stop.name,
+    stop.info?.image,
+    stop,
+  );
+  const [failed, setFailed] = useState(false);
+  return photo && !failed ? (
+    <img
+      src={photo.src}
+      alt=""
+      onError={() => setFailed(true)}
+      className={cx(
+        "w-14 shrink-0 rounded-tile object-cover",
+        tall ? "h-[72px]" : "h-14",
+      )}
+    />
+  ) : (
+    <IconTile kind={stop.kind} size={56} />
+  );
 }

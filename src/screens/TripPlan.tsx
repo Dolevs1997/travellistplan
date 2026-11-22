@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, CalendarDays } from 'lucide-react'
+import { ArrowRight, CalendarDays, Pencil, Route } from 'lucide-react'
 import { IconButton } from '../components/ui'
 import {
   ActivitySection,
@@ -13,6 +13,7 @@ import {
 } from '../components/PlanSections'
 import { isoRange, shortDate, tripLegs } from '../data/helpers'
 import { useTrip } from '../state/TripStore'
+import { navigate } from '../router'
 
 /** Trip details: dates, lodging, restaurants and activities, editable any time. */
 export default function TripPlan() {
@@ -47,7 +48,7 @@ export default function TripPlan() {
   return (
     <div className="mx-auto flex min-h-full max-w-[560px] flex-col gap-4 px-4 pt-4 pb-10">
       <header className="flex items-center gap-3">
-        <IconButton label="חזרה למפת הטיול" to="/trip">
+        <IconButton label="חזרה" onClick={() => (history.length > 1 ? history.back() : navigate('/overview'))}>
           <ArrowRight size={20} aria-hidden="true" />
         </IconButton>
         <div className="flex min-w-0 flex-col">
@@ -56,6 +57,14 @@ export default function TripPlan() {
             {trip.name}
             {countries.length ? ` · ${countries.join(', ')}` : ''}
           </span>
+        </div>
+        <div className="ms-auto flex gap-2">
+          <IconButton label="בנייה עצמית: הימים והעצירות" to="/build">
+            <Route size={20} aria-hidden="true" />
+          </IconButton>
+          <IconButton label="עריכת הטיול: ערים, לילות והתניידות" to="/edit">
+            <Pencil size={20} aria-hidden="true" />
+          </IconButton>
         </div>
       </header>
 
