@@ -5,7 +5,7 @@ import { PlaceGallery, PlaceSections } from '../components/PlaceInfo'
 import { Action } from '../components/PlaceParts'
 import { Tag } from '../components/ui'
 import { hoursOn, type RestaurantDetails } from '../data/eat'
-import { dayChipLabel, dayDestination, directionsUrl, shortDate, stopStatus, timeRange, transitLabel } from '../data/helpers'
+import { dayChipLabel, dayDestination, directionsUrl, hasLocation, shortDate, stopStatus, timeRange, transitLabel } from '../data/helpers'
 import { infoFor, photosFor, sellsTickets, stopDetails } from '../data/placeFull'
 import { KIND_LABEL, placeDetails, type PlaceDetails } from '../data/places'
 import { href, navigate } from '../router'
@@ -30,6 +30,12 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
   useEffect(() => {
     if (!stop) return
     let live = true
+    // Added by hand: only what you filled in (a same-named place on Google or Wikipedia isn't this one)
+    if (stop.info?.source === 'manual') {
+      setGoogle(null)
+      setWiki(null)
+      return
+    }
     setGoogle(undefined)
     setWiki(undefined)
     stopDetails(stop)
@@ -65,16 +71,17 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
   const city = dayDestination(trip, day)?.name ?? day.city
 
   const photos = photosFor(google, wiki, stop.info?.image)
+  const located = hasLocation(stop)
   const hours = hoursOn(google?.hours, day.date)
   const website = google?.website ?? wiki?.website ?? stop.info?.website
   const phone = google?.phone ?? stop.info?.phone
-  const ticketed = sellsTickets(stop, google?.types)
+  const ticketed = stop.info?.source !== 'manual' && sellsTickets(stop, google?.types)
   const isFood = stop.kind === 'food'
 
 
   return (
     <div className="mx-auto flex min-h-full max-w-[560px] flex-col pb-10">
-      <PlaceGallery photos={photos} name={stop.name} onBack={back} fallback={<PlaceMap lat={stop.lat} lng={stop.lng} n={index + 1} status={status} />} />
+      <PlaceGallery photos={photos} name={stop.name} onBack={back} fallback={located ? <PlaceMap lat={stop.lat} lng={stop.lng} n={index + 1} status={status} /> : <span className="flex h-full items-center justify-center text-accent"><MapPin size={40} aria-hidden="true" /></span>} />
 
       <header className="flex flex-col gap-1.5 px-4 pt-3.5">
         <h1 className="text-[26px] leading-tight font-bold">{stop.name}</h1>
@@ -110,7 +117,7 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
       </header>
 
       <div className="flex gap-2 px-4 pt-3.5">
-        <Action href={directionsUrl(stop)} icon={<Navigation size={20} />} label="ניווט" external />
+        {located && <Action href={directionsUrl(stop)} icon={<Navigation size={20} />} label="ניווט" external />}
         {ticketed && (
           <button
             type="button"
@@ -234,15 +241,19 @@ export default function PlaceDetail({ stopId }: { stopId: string }) {
 
       <section aria-label="מיקום" className="flex flex-col gap-2.5 px-4 pt-5">
         <h2 className="text-[17px] font-bold">מיקום</h2>
-        {photos.length > 0 && (
+        {located && photos.length > 0 && (
           <div className="h-44 overflow-hidden rounded-2xl border border-border">
             <PlaceMap lat={stop.lat} lng={stop.lng} n={index + 1} status={status} />
           </div>
         )}
-        <a href={google?.mapsUrl ?? directionsUrl(stop)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 text-sm">
-          <MapPin size={16} className="shrink-0 text-accent" aria-hidden="true" />
-          <bdi className="truncate">{google?.address ?? stop.area ?? city}</bdi>
-        </a>
+        {located ? (
+          <a href={google?.mapsUrl ?? directionsUrl(stop)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 text-sm">
+            <MapPin size={16} className="shrink-0 text-accent" aria-hidden="true" />
+            <bdi className="truncate">{google?.address ?? stop.info?.address ?? stop.area ?? city}</bdi>
+          </a>
+        ) : (
+          <p className="rounded-xl bg-raised px-3 py-2.5 text-[13px] text-muted">לא הוזנה כתובת, ולכן אין ניווט או מיקום במפה.</p>
+        )}
       </section>
 
       <p className="px-4 pt-5 text-center text-[11px] text-muted">

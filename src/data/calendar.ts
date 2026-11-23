@@ -1,4 +1,4 @@
-import { directionsUrl } from './helpers'
+import { directionsUrl, hasLocation } from './helpers'
 import type { Trip } from './types'
 
 /**
@@ -28,7 +28,7 @@ export function tripCalendar(trip: Trip) {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//trip-planner//HE', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${esc(trip.name)}`]
   trip.days.forEach((d, i) =>
     d.stops.forEach((s) => {
-      const notes = [`יום ${i + 1} בטיול`, s.note, s.needsBooking && !s.booked ? 'צריך להזמין מראש' : undefined, `ניווט: ${directionsUrl(s)}`].filter(Boolean).join('\n')
+      const notes = [`יום ${i + 1} בטיול`, s.note, s.needsBooking && !s.booked ? 'צריך להזמין מראש' : undefined, hasLocation(s) ? `ניווט: ${directionsUrl(s)}` : undefined].filter(Boolean).join('\n')
       lines.push(
         'BEGIN:VEVENT',
         `UID:${trip.id}-${s.id}@trip-planner`,
@@ -37,7 +37,7 @@ export function tripCalendar(trip: Trip) {
         `DTEND:${stamp(d.date, s.end)}`,
         `SUMMARY:${esc(s.name)}`,
         `LOCATION:${esc(s.area || s.name)}`,
-        `GEO:${s.lat};${s.lng}`,
+        ...(hasLocation(s) ? [`GEO:${s.lat};${s.lng}`] : []),
         `DESCRIPTION:${esc(notes)}`,
         'END:VEVENT',
       )

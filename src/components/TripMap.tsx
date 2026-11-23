@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AttributionControl, LngLatBounds, Map as MLMap, Marker, type GeoJSONSource } from 'maplibre-gl'
 import type { Day, Trip } from '../data/types'
-import { dayDestination, freeSlot, isPastDay, stopStatus } from '../data/helpers'
+import { dayDestination, freeSlot, isPastDay, stopStatus, hasLocation } from '../data/helpers'
 import { prefersReducedMotion } from '../router'
 import { applyMapTheme, currentStyleUrl } from '../maplibreSetup'
 import { mapColors, useTheme } from '../theme'
@@ -113,7 +113,7 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
-    const coords = day.stops.map((s) => [s.lng, s.lat])
+    const coords = day.stops.filter(hasLocation).map((s) => [s.lng, s.lat])
     ;(map.getSource('route') as GeoJSONSource).setData({
       type: 'FeatureCollection',
       features: coords.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }] : [],
@@ -141,6 +141,7 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
     markers.current = []
 
     day.stops.forEach((s, i) => {
+      if (!hasLocation(s)) return // keeps the other stops' numbers
       const status = stopStatus(trip, day.id, s.id)
       const wrap = document.createElement('div')
       wrap.className = 'pin-wrap'
@@ -189,7 +190,7 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
   const fitDay = () => {
     const map = mapRef.current
     if (!map) return
-    const pts = [...day.stops, ...(showSuggestions ? day.suggestions : [])].map((p) => [p.lng, p.lat] as [number, number])
+    const pts = [...day.stops.filter(hasLocation), ...(showSuggestions ? day.suggestions : [])].map((p) => [p.lng, p.lat] as [number, number])
     if (pts.length === 0) {
       // Nothing planned yet: show the day's destination itself
       const dest = dayDestination(trip, day)
@@ -214,7 +215,7 @@ export default function TripMap({ trip, day, selectedStopId, onSelectStop, onSug
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready || !selectedStopId) return
-    const s = day.stops.find((x) => x.id === selectedStopId)
+    const s = day.stops.find((x) => x.id === selectedStopId && hasLocation(x))
     if (s) map.easeTo({ center: [s.lng, s.lat], padding: padding(), duration: duration() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, selectedStopId])

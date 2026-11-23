@@ -3,9 +3,10 @@ import { Check, ExternalLink, Landmark, LocateFixed, Plus, RefreshCw, Search, St
 import { Map as MLMap, Marker, type GeoJSONSource } from 'maplibre-gl'
 import { BottomNav, cx } from '../components/ui'
 import { AddSheet, nextSlot } from './AddPlaces'
-import { DEFAULT_VISIT, distanceKm, fromMin } from '../data/helpers'
+import { DEFAULT_VISIT, distanceKm, fromMin, hasLocation } from '../data/helpers'
 import { explore, exploreAvailable, kindOf, matchTrip, toPlaceInfo, type ExploreCat, type ExplorePlace } from '../data/explore'
 import { googlePhoto } from '../data/lodging'
+import { visitsOnDay } from '../data/visits'
 import { applyMapTheme, currentStyleUrl } from '../maplibreSetup'
 import { navigate, prefersReducedMotion } from '../router'
 import { useTrip } from '../state/TripStore'
@@ -27,7 +28,7 @@ const isFood = (p: ExplorePlace) => p.types.some((t) => ['restaurant', 'cafe', '
 const fmtDistance = (m: number) => (m < 950 ? `${Math.round(m / 10) * 10} מ׳` : `${(m / 1000).toFixed(1)} ק״מ`)
 const dayPlace = (d: Day) => d.stops.find((s) => s.area)?.area.split(',')[0] || d.destination?.name || d.city
 
-type Where = { center: { lat: number; lng: number }; kind: 'day' | 'me' | 'map' }
+type Where = { center: { lat: number; lng: number }; kind: 'day' | 'me' | 'map'; label?: string }
 
 /** The map tab: what's around you (or around today's stops) – recommendations by category, your stops, add to the trip */
 export default function Nearby() {
@@ -36,11 +37,12 @@ export default function Nearby() {
   const day = trip.days.find((d) => d.id === state.activeDayId) ?? trip.days[0]
   const dayIndex = trip.days.indexOf(day)
   const city = day.destination ?? trip.destination ?? { lat: day.stops[0]?.lat ?? 0, lng: day.stops[0]?.lng ?? 0 }
-  const stopsHere = day.stops.filter((s) => distanceKm(s, city) <= 20)
+  const stopsHere = day.stops.filter((s) => hasLocation(s) && distanceKm(s, city) <= 20)
   const dayCenter = stopsHere.length
     ? { lat: stopsHere.reduce((a, s) => a + s.lat, 0) / stopsHere.length, lng: stopsHere.reduce((a, s) => a + s.lng, 0) / stopsHere.length }
     : { lat: city.lat, lng: city.lng }
 
+  const dayVisits = visitsOnDay(trip.brief, dayIndex)
   const [where, setWhere] = useState<Where>({ center: dayCenter, kind: 'day' })
   const [me, setMe] = useState<{ lat: number; lng: number } | null>(null)
   const [moved, setMoved] = useState<{ lat: number; lng: number } | null>(null)
@@ -102,7 +104,7 @@ export default function Nearby() {
     .filter((r) => r.m <= RADIUS * 1.6)
     .sort((a, b) => a.m - b.m)
   const catInfo = CATS.find((c) => c.id === cat)!
-  const fromWhere = where.kind === 'me' ? 'ממך' : where.kind === 'day' ? `מהעצירות של יום ${dayIndex + 1}` : 'מהאזור במפה'
+  const fromWhere = where.label ? `מ-${where.label}` : where.kind === 'me' ? 'ממך' : where.kind === 'day' ? `מהעצירות של יום ${dayIndex + 1}` : 'מהאזור במפה'
   const mapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(query || catInfo.maps)}/@${where.center.lat},${where.center.lng},15z`
 
   const open = (p: ExplorePlace, tripStop?: { stop: { id: string } }) => {
@@ -163,6 +165,23 @@ export default function Nearby() {
           </form>
           {!query && (
             <div role="group" aria-label="קטגוריה" className="no-scrollbar pointer-events-auto -mx-3.5 flex gap-2 overflow-x-auto px-3.5 pb-1">
+              {dayVisits.map((p) => (
+                <button
+                  key={p.visit.id}
+                  type="button"
+                  aria-pressed={where.label === p.visit.destination.name}
+                  onClick={() => {
+                    setWhere({ center: { lat: p.visit.destination.lat, lng: p.visit.destination.lng }, kind: 'map', label: p.visit.destination.name })
+                    setMoved(null)
+                  }}
+                  className={cx(
+                    'h-9 shrink-0 rounded-full px-3.5 text-[13px] font-semibold shadow-[0_2px_8px_rgba(21,24,29,0.12)]',
+                    where.label === p.visit.destination.name ? 'bg-accent-2 text-on-accent-2' : 'bg-surface text-accent-2',
+                  )}
+                >
+                  <bdi>{p.visit.destination.name}</bdi>
+                </button>
+              ))}
               {CATS.map((c) => (
                 <button
                   key={c.id}

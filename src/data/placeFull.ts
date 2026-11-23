@@ -1,4 +1,5 @@
 import { restaurant, type RestaurantDetails } from './eat'
+import type { ExplorePlace } from './explore'
 import { googlePhoto } from './lodging'
 import type { PlaceDetails } from './places'
 import type { PlaceInfo, Stop } from './types'
@@ -21,6 +22,8 @@ function readIds(): Record<string, string | null> {
 /** The stop's Google place id: its own when picked from Google, else looked up once and remembered */
 export async function googleIdFor(stop: Stop): Promise<string | null> {
   if (stop.info?.source === 'google') return stop.info.ref
+  // Added by hand: there's no Google entry to look up (a same-named business isn't this place)
+  if (stop.info?.source === 'manual') return null
   const key = `${stop.name}|${stop.lat.toFixed(4)}|${stop.lng.toFixed(4)}`
   const cached = readIds()
   if (key in cached) return cached[key]
@@ -35,6 +38,26 @@ export async function googleIdFor(stop: Stop): Promise<string | null> {
   }
   return id
 }
+
+/** Google's full details as the add-to-day sheet and the trip need them */
+export const detailsToExplore = (g: RestaurantDetails): ExplorePlace => ({
+  id: g.id,
+  name: g.name,
+  lat: g.lat,
+  lng: g.lng,
+  types: g.types,
+  typeLabel: g.typeLabel,
+  rating: g.rating,
+  ratingCount: g.ratingCount,
+  address: g.address,
+  summary: g.summary,
+  hours: g.hours,
+  website: g.website,
+  mapsUrl: g.mapsUrl,
+  photo: g.gallery[0]?.name,
+  photoAuthor: g.gallery[0]?.author,
+  photoAuthorUrl: g.gallery[0]?.authorUrl,
+})
 
 export async function stopDetails(stop: Stop): Promise<RestaurantDetails | null> {
   const id = await googleIdFor(stop)

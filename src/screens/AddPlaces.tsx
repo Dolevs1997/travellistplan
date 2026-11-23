@@ -17,6 +17,7 @@ import {
 } from '../data/explore'
 import { googlePhoto } from '../data/lodging'
 import { briefOf } from '../data/tripEdit'
+import { findVisit, nextInVisit } from '../data/visits'
 import type { Day } from '../data/types'
 import { navigate } from '../router'
 import { useTrip } from '../state/TripStore'
@@ -42,7 +43,7 @@ const dayPlace = (d: Day) => d.stops.find((s) => s.area)?.area.split(',')[0] || 
  * Add places to a day: Google recommendations around the day's stops, by category, and search.
  * Tapping a place opens a sheet for choosing the day, the time and how long to stay.
  */
-export default function AddPlaces({ dayId }: { dayId: string }) {
+export default function AddPlaces({ dayId, visitId }: { dayId: string; visitId?: string }) {
   const { state, dispatch } = useTrip()
   const { trip } = state
   const brief = briefOf(trip)
@@ -51,7 +52,9 @@ export default function AddPlaces({ dayId }: { dayId: string }) {
   const day = trip.days.find((d) => d.id === activeId) ?? initial
   const dayIndex = trip.days.indexOf(day)
   const fallback = trip.destination ?? { lat: day?.stops[0]?.lat ?? 0, lng: day?.stops[0]?.lng ?? 0 }
-  const area = day ? dayArea(day, fallback) : null
+  // Adding to a few-hours visit: places around that town, on its day
+  const visit = findVisit(trip.brief, visitId)
+  const area = visit ? { center: { lat: visit.visit.destination.lat, lng: visit.visit.destination.lng }, radius: 3000 } : day ? dayArea(day, fallback) : null
   const cats = exploreCategories(!!brief.kosher)
 
   const [cat, setCat] = useState<ExploreCat>('top')
@@ -97,11 +100,11 @@ export default function AddPlaces({ dayId }: { dayId: string }) {
 
   const add = (p: ExplorePlace, d: Day, start: number, minutes: number) => {
     const info = toPlaceInfo(p, query ? undefined : cat)
-    const isNext = start === nextSlot(d, p).start
-    dispatch({ type: 'addPlace', dayId: d.id, place: info, minutes, ...(isNext ? {} : { start: fromMin(start) }) })
+    const isNext = !visit && start === nextSlot(d, p).start
+    dispatch({ type: 'addPlace', dayId: d.id, place: info, minutes, ...(isNext ? {} : { start: fromMin(start) }), ...(visit ? { visitId: visit.visit.id } : {}) })
     setAdded((a) => [...a, { name: p.name, dayIndex: trip.days.indexOf(d), start: fromMin(start), end: fromMin(start + minutes) }])
   }
-  const quickAdd = (p: ExplorePlace) => add(p, day, nextSlot(day, p).start, DEFAULT_VISIT[kindOf(p, query ? undefined : cat)])
+  const quickAdd = (p: ExplorePlace) => add(p, day, visit ? nextInVisit(day, visit, p).start : nextSlot(day, p).start, DEFAULT_VISIT[kindOf(p, query ? undefined : cat)])
 
   const inTrip = matchTrip(places ?? [], trip.days)
   const list = (places ?? []).map((p) => ({ p, near: nearestStop(p, day.stops), inTrip: inTrip.get(p.id) }))
@@ -118,15 +121,31 @@ export default function AddPlaces({ dayId }: { dayId: string }) {
           <ArrowRight size={20} aria-hidden="true" />
         </IconButton>
         <div className="flex min-w-0 flex-col">
-          <h1 className="text-xl font-bold">הוספת מקומות ליום {dayIndex + 1}</h1>
+          <h1 className="truncate text-xl font-bold">
+            {visit ? (
+              <>
+                מקומות ב-<bdi>{visit.visit.destination.name}</bdi>
+              </>
+            ) : (
+              `הוספת מקומות ליום ${dayIndex + 1}`
+            )}
+          </h1>
           <span className="truncate text-xs text-muted">
-            {shortDate(day.date)} · {dayPlace(day)} · פנוי מ-{freeFrom} עד {dayEnd(day)}
+            {visit ? (
+              <>
+                יום {dayIndex + 1} · ביקור {timeRange(fromMin(visit.arrive), fromMin(visit.depart))}
+              </>
+            ) : (
+              <>
+                {shortDate(day.date)} · {dayPlace(day)} · פנוי מ-{freeFrom} עד {dayEnd(day)}
+              </>
+            )}
           </span>
         </div>
       </header>
 
       <div role="group" aria-label="יום" className="no-scrollbar flex gap-1.5 overflow-x-auto px-3.5 pt-3">
-        {trip.days.map((d, i) => (
+        {!visit && trip.days.map((d, i) => (
           <button
             key={d.id}
             type="button"
@@ -164,7 +183,7 @@ export default function AddPlaces({ dayId }: { dayId: string }) {
               type="button"
               aria-pressed={cat === c.id}
               // Food has its own screen, by meal, with menus, photos and reviews
-              onClick={() => (c.id === 'food' || c.id === 'kosher' ? navigate(`/eat/${day.id}`) : setCat(c.id))}
+              onClick={() => (c.id === 'food' || c.id === 'kosher' ? navigate(visit ? `/eat/${day.id}/lunch/${visit.visit.id}` : `/eat/${day.id}`) : setCat(c.id))}
               className={cx(
                 'flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-medium',
                 cat === c.id ? 'border-text bg-text text-bg' : 'border-border bg-surface',
@@ -244,6 +263,7 @@ export default function AddPlaces({ dayId }: { dayId: string }) {
           days={trip.days}
           initialDayId={day.id}
           defaultMinutes={DEFAULT_VISIT[kindOf(open, query ? undefined : cat)]}
+          fixedSlot={visit ? nextInVisit(day, visit, open) : undefined}
           onAdd={(d, start, minutes) => {
             add(open, d, start, minutes)
             setOpen(null)
@@ -341,6 +361,7 @@ export function AddSheet({
   days,
   initialDayId,
   defaultMinutes,
+  fixedSlot,
   onAdd,
   onClose,
 }: {
@@ -348,6 +369,8 @@ export function AddSheet({
   days: Day[]
   initialDayId: string
   defaultMinutes: number
+  /** Inside a few-hours visit: the day is set and the place comes after the visit's last stop */
+  fixedSlot?: { start: number; after?: string }
   onAdd: (day: Day, start: number, minutes: number) => void
   onClose: () => void
 }) {
@@ -362,7 +385,7 @@ export function AddSheet({
   }, [days, p])
   const [dayId, setDayId] = useState(initialDayId)
   const day = days.find((d) => d.id === dayId) ?? days[0]
-  const auto = nextSlot(day, p)
+  const auto = fixedSlot ?? nextSlot(day, p)
   const [own, setOwn] = useState(false)
   const [ownTime, setOwnTime] = useState(fromMin(auto.start))
   const [minutes, setMinutes] = useState(defaultMinutes)
@@ -435,7 +458,7 @@ export function AddSheet({
             </span>
           </div>
 
-          <fieldset className="flex flex-col gap-2">
+          <fieldset className={cx('flex flex-col gap-2', fixedSlot && 'hidden')}>
             <legend className="mb-2 text-[13px] font-semibold text-muted">לאיזה יום?</legend>
             <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
               {days.map((d, i) => (

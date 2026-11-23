@@ -1,10 +1,13 @@
 import { Fragment, useEffect, useState } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Coffee, Footprints, Info, MapPin, Minus, Plus, Route, TrainFront, Trash2, X, Zap } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Clock, Coffee, Footprints, Info, MapPin, Minus, Plus, Route, TrainFront, Trash2, X, Zap } from 'lucide-react'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { AddCity, Chip, RoundStepper } from '../components/TripFields'
+import { useVisitEditor } from '../components/VisitParts'
+import { visitBetween, visitsWithoutLeg } from '../data/visits'
 import { useCityPhoto } from '../data/cityPhoto'
+import { transferOptions } from '../data/transport'
 import { estimateFlight } from '../data/flightEstimate'
 import { IconButton, cx } from '../components/ui'
 import {
@@ -108,7 +111,13 @@ export default function TripWizard() {
         : step === 2
           ? `${brief.start ? `${shortDate(brief.start)} – ${shortDate(end)}` : where} · ${who}`
           : `קצב ${PACE_LABEL[brief.pace]}${brief.interests.length ? ` · ${brief.interests.length === 1 ? 'תחום עניין אחד' : `${brief.interests.length} תחומי עניין`}` : ''}`
-  const footerSummary = `${brief.legs.length === 1 ? 'יעד אחד' : `${brief.legs.length} ערים`} · ${totalNights(brief)} לילות · ${who}`
+  const visitCount = brief.visits?.length ?? 0
+  const placesText = visitCount
+    ? `${brief.legs.length === 1 ? 'מקום לינה אחד' : `${brief.legs.length} מקומות לינה`} · ${visitCount === 1 ? 'ביקור אחד' : `${visitCount} ביקורים`}`
+    : brief.legs.length === 1
+      ? 'יעד אחד'
+      : `${brief.legs.length} ערים`
+  const footerSummary = `${placesText} · ${totalNights(brief)} לילות · ${who}`
 
   const back = () => (step === 0 ? navigate('/') : go(step - 1))
 
@@ -212,8 +221,6 @@ const toggleIn = (list: string[], v: string) => (list.includes(v) ? list.filter(
 
 /* ---------- 1. where and who ---------- */
 
-const TRANSFER_MODES = ['רכבת', 'אוטובוס', 'טיסה', 'רכב', 'מעבורת'] as const
-
 function WhereStep({ brief, patch, onSelfBuild }: StepProps & { onSelfBuild: () => void }) {
   const [adding, setAdding] = useState(false)
   const [openTransfer, setOpenTransfer] = useState<number | null>(null)
@@ -229,7 +236,12 @@ function WhereStep({ brief, patch, onSelfBuild }: StepProps & { onSelfBuild: () 
     setAdding(false)
   }
   const setNights = (i: number, n: number) => setLegs(legs.map((l, k) => (k === i ? { ...l, nights: n } : l)))
-  const removeLeg = (i: number) => setLegs(legs.filter((_, k) => k !== i), transfers.filter((_, k) => k !== Math.max(0, i - 1)))
+  const removeLeg = (i: number) => {
+    const next = legs.filter((_, k) => k !== i)
+    const nextTransfers = transfers.filter((_, k) => k !== Math.max(0, i - 1))
+    patch({ legs: next, multi: true, transfers: nextTransfers.slice(0, Math.max(0, next.length - 1)), intercity: [...new Set(nextTransfers.filter(Boolean))], visits: next.length ? visitsWithoutLeg(brief, i) : [] })
+  }
+  const visitsUi = useVisitEditor(brief, patch)
   const setTransfer = (i: number, mode: string) => {
     const next = [...transfers]
     next[i] = mode
@@ -250,7 +262,7 @@ function WhereStep({ brief, patch, onSelfBuild }: StepProps & { onSelfBuild: () 
     <>
       <div className="flex flex-col gap-1.5">
         <h1 className="text-[28px] leading-tight font-bold">לאן נוסעים?</h1>
-        <p className="text-[15px] leading-[1.45] text-muted">הוסיפו ערים לפי הסדר וכמה לילות בכל אחת. אפשר לגרור כדי לשנות סדר.</p>
+        <p className="text-[15px] leading-[1.45] text-muted">לכל יעד בחרו כמה לילות, או ביקור של כמה שעות בלי לינה. אפשר לגרור כדי לשנות סדר.</p>
       </div>
 
       <button
@@ -272,7 +284,7 @@ function WhereStep({ brief, patch, onSelfBuild }: StepProps & { onSelfBuild: () 
           <ol className="flex flex-col gap-2" aria-label="היעדים בטיול">
             {legs.map((leg, i) => (
               <Fragment key={leg.destination.id}>
-                {i > 0 && (
+                {i > 0 && !visitBetween(brief, legs[i - 1].destination.id, leg.destination.name) && (
                   <li>
                     <button
                       type="button"
@@ -286,7 +298,7 @@ function WhereStep({ brief, patch, onSelfBuild }: StepProps & { onSelfBuild: () 
                     </button>
                     {openTransfer === i - 1 && (
                       <div className="flex flex-wrap gap-2 px-[26px] pt-1 pb-2" role="group" aria-label={`מעבר מ${legs[i - 1].destination.name} ל${leg.destination.name}`}>
-                        {TRANSFER_MODES.map((m) => (
+                        {transferOptions(legs[i - 1].destination, leg.destination).map(({ mode: m }) => (
                           <Chip key={m} small on={transfers[i - 1] === m} onClick={() => setTransfer(i - 1, m)}>
                             {m}
                           </Chip>
@@ -295,7 +307,8 @@ function WhereStep({ brief, patch, onSelfBuild }: StepProps & { onSelfBuild: () 
                     )}
                   </li>
                 )}
-                <LegRow leg={leg} onNights={(n) => setNights(i, n)} onRemove={() => removeLeg(i)} />
+                <LegRow leg={leg} onNights={(n) => setNights(i, n)} onRemove={() => removeLeg(i)} onToVisit={i > 0 ? () => visitsUi.convertLeg(i) : undefined} />
+                {visitsUi.cardsAfter(leg.destination.id)}
               </Fragment>
             ))}
             <li>
@@ -312,9 +325,11 @@ function WhereStep({ brief, patch, onSelfBuild }: StepProps & { onSelfBuild: () 
                 </button>
               )}
             </li>
+            {legs.length > 0 && <li>{visitsUi.adder}</li>}
           </ol>
         </SortableContext>
       </DndContext>
+      {visitsUi.sheet}
 
       {totalNights(brief) + 1 > MAX_TRIP_DAYS && (
         <p role="alert" className="rounded-card border border-dashed border-accent-2 bg-accent-2/6 px-3 py-2 text-[13px] text-accent-2">
@@ -344,7 +359,7 @@ function WhereStep({ brief, patch, onSelfBuild }: StepProps & { onSelfBuild: () 
 }
 
 /** One destination: photo, name, and a nights counter; drag the row to reorder. At one night the minus removes it. */
-function LegRow({ leg, onNights, onRemove }: { leg: TripBrief['legs'][number]; onNights: (n: number) => void; onRemove: () => void }) {
+function LegRow({ leg, onNights, onRemove, onToVisit }: { leg: TripBrief['legs'][number]; onNights: (n: number) => void; onRemove: () => void; onToVisit?: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: leg.destination.id })
   const photo = useCityPhoto(leg.destination)
   const [failed, setFailed] = useState(false)
@@ -370,7 +385,11 @@ function LegRow({ leg, onNights, onRemove }: { leg: TripBrief['legs'][number]; o
         <span className="truncate text-xs text-muted">{leg.destination.kind === 'country' ? 'כל המדינה' : leg.destination.country}</span>
       </span>
       <div className="flex items-center gap-1" role="group" aria-label={`לילות ב${name}`}>
-        {leg.nights <= 1 ? (
+        {leg.nights <= 1 && onToVisit ? (
+          <button type="button" aria-label={`${name} לכמה שעות, בלי לינה`} title="כמה שעות, בלי לינה" onClick={onToVisit} className={cx(small, 'text-accent-2')}>
+            <Clock size={16} aria-hidden="true" />
+          </button>
+        ) : leg.nights <= 1 ? (
           <button type="button" aria-label={`הסרת ${name}`} onClick={onRemove} className={cx(small, 'text-accent-2')}>
             <Trash2 size={16} aria-hidden="true" />
           </button>

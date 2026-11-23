@@ -19,6 +19,7 @@ import { GripVertical, Info, Navigation, Plus, Trash2 } from "lucide-react";
 import type { Day, Stop, StopStatus, Trip } from "../data/types";
 import {
   directionsUrl,
+  hasLocation,
   freeSlot,
   isPastDay,
   slotPartLabel,
@@ -38,6 +39,8 @@ interface Props {
   onReorder: (from: number, to: number) => void;
   /** Remove a stop from the day (the screen offers undo) */
   onRemove: (id: string) => void;
+  /** The day has a visit shown beside this list: do not offer its hours as free */
+  noSlot?: boolean;
 }
 
 export default function Timeline({
@@ -47,6 +50,7 @@ export default function Timeline({
   onSelect,
   onReorder,
   onRemove,
+  noSlot,
 }: Props) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -55,7 +59,7 @@ export default function Timeline({
     }),
   );
   const ids = day.stops.map((s) => s.id);
-  const slot = isPastDay(trip, day.id) ? null : freeSlot(day);
+  const slot = noSlot || isPastDay(trip, day.id) ? null : freeSlot(day);
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
@@ -118,7 +122,7 @@ export default function Timeline({
         </div>
       )}
 
-      {day.stops.length === 0 && !slot && (
+      {day.stops.length === 0 && !slot && !noSlot && (
         <p className="text-muted">אין עצירות ביום הזה.</p>
       )}
     </div>
@@ -264,6 +268,7 @@ function SortableStop({
                 <Info size={13} aria-hidden="true" />
                 פרטים
               </a>
+              {hasLocation(stop) && (
               <a
                 href={directionsUrl(stop)}
                 target="_blank"
@@ -274,6 +279,7 @@ function SortableStop({
                 <Navigation size={13} aria-hidden="true" />
                 ניווט
               </a>
+              )}
             </span>
           </div>
           <button

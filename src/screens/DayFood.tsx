@@ -21,6 +21,7 @@ import {
 import { fromMin, shortDate, timeRange } from '../data/helpers'
 import { googlePhoto } from '../data/lodging'
 import { briefOf } from '../data/tripEdit'
+import { findVisit, nextInVisit } from '../data/visits'
 import type { Day } from '../data/types'
 import { navigate } from '../router'
 import { useTrip } from '../state/TripStore'
@@ -42,7 +43,7 @@ const KOSHER_NAME = /kosher|kasher|כשר/i
 const dayPlace = (d: Day) => d.stops.find((s) => s.area)?.area.split(',')[0] || d.destination?.name || d.city
 
 /** Where to eat on a day: pick the meal, see restaurants near where you'll be then, add one to the schedule */
-export default function DayFood({ dayId, meal: mealParam }: { dayId: string; meal?: string }) {
+export default function DayFood({ dayId, meal: mealParam, visitId }: { dayId: string; meal?: string; visitId?: string }) {
   const { state, dispatch } = useTrip()
   const { trip } = state
   const brief = briefOf(trip)
@@ -58,10 +59,13 @@ export default function DayFood({ dayId, meal: mealParam }: { dayId: string; mea
   const [failed, setFailed] = useState(false)
   const [added, setAdded] = useState<{ name: string; start: number; end: number; shift: number } | null>(null)
 
-  const plan = day ? mealPlan(day, meal, city) : null
+  // During a few-hours visit: restaurants in that town, after the visit's last stop
+  const visit = findVisit(trip.brief, visitId)
+  const visitPlace = visit?.visit.destination
+  const plan = day && visit && visitPlace ? { ...nextInVisit(day, visit, visitPlace), near: visitPlace, nearName: visitPlace.name } : day ? mealPlan(day, meal, city) : null
   // Kosher places are few: search the whole city for them
-  const radius = kind === 'kosher' ? 8000 : 900
-  const center = kind === 'kosher' ? city : (plan?.near ?? city)
+  const radius = kind === 'kosher' ? 8000 : visit ? 1500 : 900
+  const center = kind === 'kosher' ? (visitPlace ?? city) : (plan?.near ?? city)
   const searchKey = `${meal}|${kind}|${center.lat.toFixed(4)},${center.lng.toFixed(4)}|${radius}`
 
   useEffect(() => {
@@ -94,7 +98,7 @@ export default function DayFood({ dayId, meal: mealParam }: { dayId: string; mea
 
   const add = (p: EatPlace) => {
     const pre = previewMeal(day, plan, p, m.minutes)
-    dispatch({ type: 'insertPlace', dayId: day.id, place: restaurantInfo(p), index: plan.index, start: fromMin(pre.start), minutes: m.minutes })
+    dispatch({ type: 'insertPlace', dayId: day.id, place: restaurantInfo(p), index: plan.index, start: fromMin(pre.start), minutes: m.minutes, ...(visit ? { visitId: visit.visit.id } : {}) })
     setAdded({ name: p.name, ...pre })
   }
 
@@ -108,7 +112,7 @@ export default function DayFood({ dayId, meal: mealParam }: { dayId: string; mea
           near={nearestStopText(p, day.stops)}
           inDay={day.stops.find((s) => s.info?.ref === p.id)?.start}
           kosher={kosher}
-          onOpen={() => navigate(`/restaurant/${p.id}/${day.id}/${meal}`)}
+          onOpen={() => navigate(`/restaurant/${p.id}/${day.id}/${meal}${visit ? `/${visit.visit.id}` : ''}`)}
           onAdd={() => add(p)}
         />
       ))}
@@ -122,7 +126,15 @@ export default function DayFood({ dayId, meal: mealParam }: { dayId: string; mea
           <ArrowRight size={20} aria-hidden="true" />
         </IconButton>
         <div className="flex min-w-0 flex-col">
-          <h1 className="text-xl font-bold">איפה אוכלים ביום {dayIndex + 1}?</h1>
+          <h1 className="truncate text-xl font-bold">
+            {visitPlace ? (
+              <>
+                איפה אוכלים ב-<bdi>{visitPlace.name}</bdi>?
+              </>
+            ) : (
+              `איפה אוכלים ביום ${dayIndex + 1}?`
+            )}
+          </h1>
           <span className="truncate text-xs text-muted">
             {shortDate(day.date)} · {dayPlace(day)}
           </span>
@@ -132,7 +144,7 @@ export default function DayFood({ dayId, meal: mealParam }: { dayId: string; mea
       <div role="group" aria-label="ארוחה" className="flex gap-2 px-3.5 pt-3.5">
         {MEAL_IDS.map((id) => {
           const done = plannedMeal(day, id)
-          const p = mealPlan(day, id, city)
+          const p = visit ? plan : mealPlan(day, id, city)
           return (
             <button
               key={id}
