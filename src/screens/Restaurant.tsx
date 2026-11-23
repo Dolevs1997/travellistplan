@@ -6,6 +6,7 @@ import { FACT_LABEL } from '../data/placeLabels'
 import { MEALS, MEAL_IDS, hoursOn, mealPlan, nearestStopText, previewMeal, priceSigns, restaurant, restaurantInfo, type Meal, type RestaurantDetails } from '../data/eat'
 import { directionsUrl, fromMin, shortDate, timeRange } from '../data/helpers'
 import { googlePhoto } from '../data/lodging'
+import { findVisit, nextInVisit } from '../data/visits'
 import { navigate } from '../router'
 import { useTrip } from '../state/TripStore'
 
@@ -14,7 +15,7 @@ import { useTrip } from '../state/TripStore'
  * One restaurant: photos, rating and reviews, menu links, what it offers, and where it is.
  * Opened from "where to eat" with a day and meal (then it can be added) or from the schedule.
  */
-export default function Restaurant({ id, dayId, meal }: { id: string; dayId?: string; meal?: string }) {
+export default function Restaurant({ id, dayId, meal, visitId }: { id: string; dayId?: string; meal?: string; visitId?: string }) {
   const { state, dispatch } = useTrip()
   const { trip } = state
   const [r, setR] = useState<RestaurantDetails | null>(null)
@@ -66,14 +67,15 @@ export default function Restaurant({ id, dayId, meal }: { id: string; dayId?: st
   const facts = FACT_LABEL.filter(([k]) => r.facts[k])
   const hours = day ? hoursOn(r.hours, day.date) : undefined
   const cityCenter = day?.destination ?? trip.destination ?? r
-  const plan = day && mealId ? mealPlan(day, mealId, cityCenter) : null
+  const visit = findVisit(trip.brief, visitId)
+  const plan = day && visit ? { ...nextInVisit(day, visit, r), near: visit.visit.destination, nearName: visit.visit.destination.name } : day && mealId ? mealPlan(day, mealId, cityCenter) : null
   const pre = day && plan && mealId ? previewMeal(day, plan, r, MEALS[mealId].minutes) : null
   const current = r.gallery[photo]
   const reserveUrl = r.facts.reservable ? (r.website ?? r.mapsUrl) : undefined
 
   const add = () => {
     if (!day || !plan || !pre || !mealId) return
-    dispatch({ type: 'insertPlace', dayId: day.id, place: restaurantInfo(r), index: plan.index, start: fromMin(pre.start), minutes: MEALS[mealId].minutes })
+    dispatch({ type: 'insertPlace', dayId: day.id, place: restaurantInfo(r), index: plan.index, start: fromMin(pre.start), minutes: MEALS[mealId].minutes, ...(visit ? { visitId: visit.visit.id } : {}) })
     setAdded(true)
   }
 

@@ -117,7 +117,8 @@ export function estimate(b: TripBrief, tier: 'budget' | 'comfort' | 'premium'): 
   const lodging = legs.reduce((n, l) => n + l.nights * b.rooms * NIGHT[tier] * priceLevel(l.destination), 0)
   const level = legs.length ? legs.reduce((n, l) => n + priceLevel(l.destination), 0) / legs.length : 1
   const food = days * people * FOOD[tier] * level
-  const intercity = Math.max(0, legs.length - 1) * people * MOVE[tier]
+  // A visit on the way adds one more short move; it has no lodging
+  const intercity = (Math.max(0, legs.length - 1) + (b.visits?.length ?? 0)) * people * MOVE[tier]
   const attractions = days * people * THINGS[tier] * level
   const flights = (b.flightPerPerson ?? 0) * people
   const parts = { lodging: round50(lodging), food: round50(food), intercity: round50(intercity), attractions: round50(attractions), flights }

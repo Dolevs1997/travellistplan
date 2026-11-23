@@ -3,7 +3,7 @@ import { ArrowRight, Bus, Car, ExternalLink, Plane, Search, Ship, TrainFront, ty
 import { IconButton, cx } from '../components/ui'
 import { addDays, travelers } from '../data/brief'
 import { distanceKm, shortDate } from '../data/helpers'
-import { compareUrl, hoursLabel, recommendedMode, transferOptions, type TransferMode } from '../data/transport'
+import { compareUrl, crossesSea, hoursLabel, recommendedMode, transferOptions, type TransferMode } from '../data/transport'
 import { useEditableBrief } from '../data/tripEdit'
 import { useTrip } from '../state/TripStore'
 import { navigate } from '../router'
@@ -91,7 +91,7 @@ export default function Transfer({ index }: { index: number }) {
                       <span className="text-base font-semibold">{o.mode === 'טיסה' ? 'טיסה פנימית' : o.mode}</span>
                       {o.mode === recommended && <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-on-accent">מומלץ</span>}
                     </span>
-                    <span className="text-[13px] text-muted">{ferry ? o.note : `${hoursLabel(o.hours)} · ${o.note}`}</span>
+                    <span className="text-[13px] text-muted">{ferry && !crossesSea(from, to) ? o.note : `${hoursLabel(o.hours)} · ${o.note}`}</span>
                   </span>
                   {price && (
                     <span className={cx('text-end text-sm font-bold', on && 'text-accent')}>

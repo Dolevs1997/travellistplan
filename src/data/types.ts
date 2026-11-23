@@ -7,7 +7,7 @@ export type TransitMode = 'walk' | 'tram' | 'bus' | 'metro' | 'train' | 'car'
  */
 export interface PlaceInfo {
   /** 'ai': added by the chat assistant after the user approved it; 'google': from the add-places recommendations */
-  source: 'wikidata' | 'osm' | 'ai' | 'google'
+  source: 'wikidata' | 'osm' | 'ai' | 'google' | 'manual'
   /** Wikidata id (Q…), OSM id ("node/123") or Google place id */
   ref: string
   name: string
@@ -36,6 +36,8 @@ export interface PlaceInfo {
   ratingCount?: number
   hoursText?: string[]
   mapsUrl?: string
+  /** Added by hand without an address: its coordinates are only a placeholder, so no navigation or map pin */
+  noLocation?: boolean
 }
 export type StopStatus = 'done' | 'current' | 'upcoming'
 
@@ -62,6 +64,8 @@ export interface Stop {
   note?: string
   /** How to get from this stop to the next one */
   transitToNext?: Transit
+  /** Part of a few-hours visit (see TripBrief.visits): keeps its time inside the visit */
+  visitId?: string
   /** Photo, summary source etc. for places picked from recommendations or search */
   info?: PlaceInfo
 }
@@ -178,6 +182,22 @@ export interface RentalChoice {
   dropoff: string
 }
 
+/** A destination for a few hours, without lodging. It happens inside a day (see src/data/visits.ts) */
+export interface Visit {
+  id: string
+  destination: Destination
+  /** The destination it comes after in the route */
+  afterId: string
+  hours: number
+  /** "HH:MM": when you leave for it */
+  leave: string
+  /** Days from the day you leave `afterId` (0 or unset: that day) */
+  dayShift?: number
+  /** How you get there and how you continue (unset: the suggested way) */
+  modeIn?: string
+  modeOut?: string
+}
+
 /** The answers of the new-trip wizard, kept on the trip (see src/data/brief.ts) */
 export interface TripBrief {
   /** Destinations in order. With several, `nights` sets the length; with one, the dates do */
@@ -212,6 +232,8 @@ export interface TripBrief {
   cityTransport?: Record<string, string>
   /** Chosen rental car per destination id */
   rentals?: Record<string, RentalChoice>
+  /** Destinations for a few hours, without lodging */
+  visits?: Visit[]
   /** "I already have a route": the user builds the days themselves after the wizard */
   selfBuild?: boolean
 }

@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useState } from 'react'
-import { BedDouble, Car, ChevronLeft, GripVertical, MapPin, Minus, Plus, RefreshCw, Route, TrainFront, Trash2 } from 'lucide-react'
+import { BedDouble, Car, ChevronLeft, Clock, GripVertical, MapPin, Minus, Plus, RefreshCw, Route, TrainFront, Trash2 } from 'lucide-react'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { AddCity, RoundStepper } from '../components/TripFields'
+import { useVisitEditor } from '../components/VisitParts'
+import { visitBetween, visitsWithReplacedLeg, visitsWithoutLeg } from '../data/visits'
 import { useCityPhoto } from '../data/cityPhoto'
 import { cx } from '../components/ui'
 import { addDays, totalNights } from '../data/brief'
@@ -56,11 +58,12 @@ export default function EditTrip() {
     if (i === 0) t.shift()
     else if (i === legs.length - 1) t.splice(i - 1, 1)
     else t.splice(i - 1, 2, '')
-    setLegs(legs.filter((_, k) => k !== i), t)
+    patchBrief({ legs: legs.filter((_, k) => k !== i), transfers: t.slice(0, Math.max(0, legs.length - 2)), visits: visitsWithoutLeg(b, i) })
   }
+  const visitsUi = useVisitEditor(b, patchBrief, trip.days)
   const replaceLeg = (i: number, destination: Destination) => {
     const t = Array.from({ length: Math.max(0, legs.length - 1) }, (_, k) => (k === i || k === i - 1 ? '' : (b.transfers?.[k] ?? '')))
-    setLegs(legs.map((l, k) => (k === i ? { ...l, destination } : l)), t)
+    patchBrief({ legs: legs.map((l, k) => (k === i ? { ...l, destination } : l)), transfers: t.slice(0, Math.max(0, legs.length - 1)), visits: visitsWithReplacedLeg(b, i, destination) })
     setReplacing(null)
   }
 
@@ -165,7 +168,7 @@ export default function EditTrip() {
             <ol className="flex flex-col gap-2">
               {legs.map((leg, i) => (
                 <Fragment key={leg.destination.id}>
-                  {i > 0 && (
+                  {i > 0 && !visitBetween(b, legs[i - 1].destination.id, leg.destination.name) && (
                     <li>
                       <a
                         href={href(`/transfer/${i - 1}`)}
@@ -193,7 +196,9 @@ export default function EditTrip() {
                     replacing={replacing === leg.destination.id}
                     onReplace={() => (setAdding(false), setReplacing(replacing === leg.destination.id ? null : leg.destination.id))}
                     picker={<AddCity onPick={(d) => replaceLeg(i, d)} onCancel={() => setReplacing(null)} autoFocus skip={ids} placeholder={`במה להחליף את ${leg.destination.name}?`} browseOpen />}
+                    onToVisit={i > 0 ? () => visitsUi.convertLeg(i) : undefined}
                   />
+                  {visitsUi.cardsAfter(leg.destination.id)}
                 </Fragment>
               ))}
             </ol>
@@ -216,6 +221,8 @@ export default function EditTrip() {
             + הוספת עיר
           </button>
         )}
+        {visitsUi.adder}
+        {visitsUi.sheet}
       </section>
 
       {tooLong && (
@@ -259,6 +266,7 @@ function CityCard({
   replacing,
   onReplace,
   picker,
+  onToVisit,
 }: {
   lodging: { index: number; name?: string }
   dest: Destination
@@ -272,6 +280,8 @@ function CityCard({
   replacing: boolean
   onReplace: () => void
   picker: React.ReactNode
+  /** At one night, the minus offers a visit of a few hours instead */
+  onToVisit?: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: dest.id })
   const small = 'flex size-9 items-center justify-center rounded-full bg-raised transition-opacity duration-200 ease-out disabled:opacity-35'
@@ -291,9 +301,15 @@ function CityCard({
           <span className="text-xs text-muted">{dates.from ? `${shortDate(dates.from)} – ${shortDate(dates.to)}` : dest.country}</span>
         </span>
         <div className="flex items-center gap-0.5" role="group" aria-label={`לילות ב${dest.name}`}>
-          <button type="button" aria-label={`פחות לילות ב${dest.name}`} disabled={nights <= 1} onClick={() => onNights(nights - 1)} className={small}>
-            <Minus size={16} aria-hidden="true" />
-          </button>
+          {nights <= 1 && onToVisit ? (
+            <button type="button" aria-label={`${dest.name} לכמה שעות, בלי לינה`} title="כמה שעות, בלי לינה" onClick={onToVisit} className={cx(small, 'text-accent-2')}>
+              <Clock size={16} aria-hidden="true" />
+            </button>
+          ) : (
+            <button type="button" aria-label={`פחות לילות ב${dest.name}`} disabled={nights <= 1} onClick={() => onNights(nights - 1)} className={small}>
+              <Minus size={16} aria-hidden="true" />
+            </button>
+          )}
           <span className="min-w-[42px] text-center text-sm font-semibold" aria-live="polite">
             {nights === 1 ? 'לילה 1' : `${nights} לילות`}
           </span>

@@ -5,33 +5,13 @@ import { PlaceGallery, PlaceSections } from '../components/PlaceInfo'
 import { Action } from '../components/PlaceParts'
 import { AddSheet, nextSlot } from './AddPlaces'
 import { hoursOn, restaurant, type RestaurantDetails } from '../data/eat'
-import { kindOf, matchTrip, toPlaceInfo, type ExplorePlace } from '../data/explore'
+import { kindOf, matchTrip, toPlaceInfo } from '../data/explore'
 import { DEFAULT_VISIT, dayDestination, directionsUrl, fromMin, shortDate } from '../data/helpers'
-import { photosFor, sellsTickets } from '../data/placeFull'
+import { detailsToExplore, photosFor, sellsTickets } from '../data/placeFull'
 import { KIND_LABEL, placeDetails, type PlaceDetails } from '../data/places'
 import type { Stop } from '../data/types'
 import { href, navigate } from '../router'
 import { useTrip } from '../state/TripStore'
-
-/** Google's details as the add-to-day sheet and the trip need them */
-const asExplore = (g: RestaurantDetails): ExplorePlace => ({
-  id: g.id,
-  name: g.name,
-  lat: g.lat,
-  lng: g.lng,
-  types: g.types,
-  typeLabel: g.typeLabel,
-  rating: g.rating,
-  ratingCount: g.ratingCount,
-  address: g.address,
-  summary: g.summary,
-  hours: g.hours,
-  website: g.website,
-  mapsUrl: g.mapsUrl,
-  photo: g.gallery[0]?.name,
-  photoAuthor: g.gallery[0]?.author,
-  photoAuthorUrl: g.gallery[0]?.authorUrl,
-})
 
 /**
  * Any place picked on the map (not in the trip yet): photos, rating and reviews, hours on your day,
@@ -54,7 +34,7 @@ export default function Spot({ id, dayId }: { id: string; dayId?: string }) {
         if (!live) return
         setGoogle(g)
         // Wikipedia's summary, facts and "what to do", found by the place's name
-        placeDetails(toPlaceInfo(asExplore(g)))
+        placeDetails(toPlaceInfo(detailsToExplore(g)))
           .then((w) => live && setWiki(w))
           .catch(() => live && setWiki(null))
       })
@@ -82,7 +62,7 @@ export default function Spot({ id, dayId }: { id: string; dayId?: string }) {
       </p>
     )
 
-  const place = asExplore(google)
+  const place = detailsToExplore(google)
   const kind = kindOf(place)
   // Tickets: judged like a trip stop of the same kind
   const asStop = { kind, needsBooking: false } as Stop

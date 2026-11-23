@@ -263,5 +263,8 @@ export const DEFAULT_VISIT: Record<StopKind, number> = {
   street: 45,
 }
 
+/** A place added by hand without an address has no real spot on the map */
+export const hasLocation = (s: { info?: { noLocation?: boolean } }) => !s.info?.noLocation
+
 export const directionsUrl = (s: { lat: number; lng: number }) =>
   `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}&travelmode=walking`

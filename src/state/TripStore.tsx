@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatc
 import { arrayMove } from '@dnd-kit/sortable'
 import { mockTrip } from '../data/mockTrip'
 import { DEFAULT_VISIT, dayStart, estimateTransit, fromMin, insertStop, isoRange, nextStartAfter, reflowFrom, stopDuration, toMin } from '../data/helpers'
+import { mergeKeepingVisits, syncVisitStops } from '../data/visits'
 import type { Activity, Day, Destination, Expense, Lodging, PlaceInfo, SavedRestaurant, Stop, Transit, Trip, TripBrief, TripExtras } from '../data/types'
 
 /** What screens read: the active trip plus UI state */
@@ -48,9 +49,11 @@ export type Action =
   | { type: 'removeExtra'; list: keyof TripExtras; id: string }
   | { type: 'setDayHours'; dayId: string; start: string; end: string }
   /** `start` ('HH:MM') puts the place at that time; without it, it goes after the day's last stop */
-  | { type: 'addPlace'; dayId: string; place: PlaceInfo; minutes?: number; start?: string }
+  | { type: 'addPlace'; dayId: string; place: PlaceInfo; minutes?: number; start?: string; visitId?: string }
   /** A meal: at `index` in the day, at `start`; later stops move only if they'd overlap */
-  | { type: 'insertPlace'; dayId: string; place: PlaceInfo; index: number; start: string; minutes: number }
+  | { type: 'insertPlace'; dayId: string; place: PlaceInfo; index: number; start: string; minutes: number; visitId?: string; note?: string }
+  /** The route screen's drag between parts of the day, and its undo */
+  | { type: 'setDayStops'; dayId: string; stops: Stop[] }
   | { type: 'setStopMinutes'; stopId: string; minutes: number }
   | { type: 'setTransit'; stopId: string; transit: Transit }
   | { type: 'removeStop'; stopId: string }
@@ -172,9 +175,16 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
       return {
         trip: mapDay(trip, action.dayId, (d) => {
           if (d.stops.length < 2) return d
-          const legs = d.stops.map((s) => s.transitToNext)
-          const moved = arrayMove(d.stops, action.from, action.to).map((s, i) => ({ ...s, transitToNext: legs[i] }))
-          return { ...d, stops: reflowFrom(moved, toMin(d.stops[0].start)) }
+          // A visit's stops stay at their times; only the day's other stops change order
+          const pinned = d.stops.filter((s) => s.visitId)
+          const free = d.stops.filter((s) => !s.visitId)
+          if (free.length < 2) return d
+          const from = free.indexOf(d.stops[action.from])
+          const to = free.indexOf(d.stops[action.to])
+          if (from < 0 || to < 0) return d
+          const legs = free.map((s) => s.transitToNext)
+          const moved = arrayMove(free, from, to).map((s, i) => ({ ...s, transitToNext: legs[i] }))
+          return { ...d, stops: mergeKeepingVisits(reflowFrom(moved, toMin(free[0].start)), pinned) }
         }),
       }
     case 'addFromSuggestion': {
@@ -295,6 +305,7 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
             start: fromMin(at),
             end: fromMin(at + minutes),
             info: place,
+            ...(action.visitId ? { visitId: action.visitId } : {}),
           }
           const stops = [...d.stops, stop].sort((a, b) => toMin(a.start) - toMin(b.start))
           const i = stops.indexOf(stop)
@@ -344,9 +355,13 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
         start: fromMin(at),
         end: fromMin(at + action.minutes),
         info: place,
+        ...(action.visitId ? { visitId: action.visitId } : {}),
+        ...(action.note ? { note: action.note } : {}),
       }
       return { trip: mapDay(trip, action.dayId, (d) => ({ ...d, stops: insertStop(d.stops, Math.max(0, Math.min(action.index, d.stops.length)), stop).stops })) }
     }
+    case 'setDayStops':
+      return { trip: mapDay(trip, action.dayId, (d) => ({ ...d, stops: action.stops })) }
     case 'setStopMinutes':
       return {
         trip: mapDayOfStop(trip, action.stopId, (d) =>
@@ -368,7 +383,8 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
         selectedStopId: null,
       }
     case 'setBrief':
-      return { trip: { ...trip, brief: action.brief } }
+      // A visit that moved takes its stops along
+      return { trip: { ...trip, days: syncVisitStops(trip, action.brief), brief: action.brief } }
     case 'renameTrip':
       return { trip: { ...trip, name: action.name.trim() || trip.name } }
     case 'setDaysDestination': {
@@ -402,8 +418,11 @@ function tripReducer(trip: Trip, action: Action): { trip: Trip; selectedStopId?:
  */
 const reflowDay = (d: Day, previousFirstStart?: string): Day => {
   if (!d.stops.length) return d
-  const start = d.startTime ?? previousFirstStart ?? d.stops[0].start ?? dayStart(d)
-  return { ...d, stops: reflowFrom(d.stops, toMin(start)) }
+  const free = d.stops.filter((s) => !s.visitId)
+  const pinned = d.stops.filter((s) => s.visitId)
+  if (!free.length) return d
+  const start = d.startTime ?? (pinned.length ? free[0].start : (previousFirstStart ?? free[0].start ?? dayStart(d)))
+  return { ...d, stops: mergeKeepingVisits(reflowFrom(free, toMin(start)), pinned) }
 }
 
 const mapDayOfStop = (trip: Trip, stopId: string, fn: (d: Day) => Day): Trip => ({

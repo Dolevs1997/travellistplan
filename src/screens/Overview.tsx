@@ -3,6 +3,7 @@ import { ArrowRight, BedDouble, CalendarDays, Car, ChevronLeft, ExternalLink, Lo
 import { IconButton, cx } from '../components/ui'
 import { addDays, travelers } from '../data/brief'
 import { useCityPhoto } from '../data/cityPhoto'
+import { visitsOnDay } from '../data/visits'
 import { countdownLabel, daysUntil, shortDate, tripLegs, tripRange } from '../data/helpers'
 import { briefOf } from '../data/tripEdit'
 import type { Day, Destination } from '../data/types'
@@ -109,7 +110,7 @@ export default function Overview() {
           <ul className="flex flex-col gap-1.5">
             {trip.days.map((d, i) => (
               <li key={d.id}>
-                <DayRow day={d} n={i + 1} dest={d.destination ?? trip.destination} onOpen={() => openDay(d)} />
+                <DayRow day={d} n={i + 1} dest={d.destination ?? trip.destination} visitName={visitsOnDay(trip.brief, i)[0]?.visit.destination.name} onOpen={() => openDay(d)} />
               </li>
             ))}
           </ul>
@@ -240,10 +241,10 @@ export default function Overview() {
   )
 }
 
-function DayRow({ day, n, dest, onOpen }: { day: Day; n: number; dest: Destination | null | undefined; onOpen: () => void }) {
+function DayRow({ day, n, dest, visitName, onOpen }: { day: Day; n: number; dest: Destination | null | undefined; visitName?: string; onOpen: () => void }) {
   const photo = useCityPhoto(dest)
   const [failed, setFailed] = useState(false)
-  const free = day.stops.length === 0
+  const free = day.stops.length === 0 && !visitName
   return (
     <button
       type="button"
@@ -265,9 +266,9 @@ function DayRow({ day, n, dest, onOpen }: { day: Day; n: number; dest: Destinati
         <span className={cx('text-xs', free ? 'text-accent-2' : 'text-muted')}>
           יום {n} · {weekday(day.date)} {shortDate(day.date)}
         </span>
-        <span className={cx('truncate text-[15px] font-semibold', free && 'text-accent-2')}>{free ? 'יום פנוי – תכננו משהו' : day.title || day.city}</span>
+        <span className={cx('truncate text-[15px] font-semibold', free && 'text-accent-2')}>{free ? 'יום פנוי – תכננו משהו' : visitName ? <>דרך <bdi>{visitName}</bdi></> : day.title || day.city}</span>
       </span>
-      {!free && <span className="shrink-0 ps-1.5 text-xs text-muted">{day.stops.length === 1 ? 'עצירה 1' : `${day.stops.length} עצירות`}</span>}
+      {!free && <span className="shrink-0 ps-1.5 text-xs text-muted">{visitName && !day.stops.length ? 'ביקור' : day.stops.length === 1 ? 'עצירה 1' : `${day.stops.length} עצירות`}</span>}
     </button>
   )
 }

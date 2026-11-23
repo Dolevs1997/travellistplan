@@ -1,4 +1,4 @@
-import { distanceKm } from './helpers'
+import { distanceKm, hasLocation } from './helpers'
 import { googlePhoto } from './lodging'
 import type { Day, PlaceInfo, Stop, StopKind } from './types'
 
@@ -76,7 +76,7 @@ export function explore(
 /** Where to look for a day: around its stops (in its city), else the day's destination */
 export function dayArea(day: Day, fallback: { lat: number; lng: number }) {
   const city = day.destination ?? fallback
-  const stops = day.stops.filter((s) => distanceKm(s, city) <= 20)
+  const stops = day.stops.filter((s) => hasLocation(s) && distanceKm(s, city) <= 20)
   if (!stops.length) return { center: { lat: city.lat, lng: city.lng }, radius: 3000 }
   const center = { lat: stops.reduce((a, s) => a + s.lat, 0) / stops.length, lng: stops.reduce((a, s) => a + s.lng, 0) / stops.length }
   const spread = Math.max(...stops.map((s) => distanceKm(s, center))) * 1000
@@ -86,7 +86,7 @@ export function dayArea(day: Day, fallback: { lat: number; lng: number }) {
 /** The day's stop closest to a place, and the walk to it (13 min per km, like elsewhere in the app) */
 export function nearestStop(p: { lat: number; lng: number }, stops: Stop[]) {
   let best: { stop: Stop; km: number } | null = null
-  for (const s of stops) {
+  for (const s of stops.filter(hasLocation)) {
     const km = distanceKm(p, s)
     if (!best || km < best.km) best = { stop: s, km }
   }
@@ -172,6 +172,7 @@ const hebrew = (x: string) => /[\u0590-\u05FF]/.test(x)
 /** The same place under another spelling: close by, and a similar name (or the same distinctive first word) */
 function samePlace(p: ExplorePlace, s: Stop) {
   if (s.info?.ref === p.id) return true
+  if (!hasLocation(s)) return false
   if (distanceKm(p, s) > 0.3) return false
   const a = plain(p.name)
   const b = plain(s.name)
@@ -201,7 +202,7 @@ export function matchTrip(places: ExplorePlace[], days: Day[]) {
   )
   days.forEach((d, dayIndex) =>
     d.stops.forEach((stop) => {
-      if (matchedStops.has(stop.id)) return
+      if (matchedStops.has(stop.id) || !hasLocation(stop)) return
       let best: { p: ExplorePlace; km: number } | null = null
       for (const p of places) {
         if (found.has(p.id) || hebrew(plain(p.name)) === hebrew(plain(stop.name))) continue

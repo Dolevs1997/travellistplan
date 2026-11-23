@@ -26,7 +26,7 @@ import Overview from './screens/Overview'
 export default function App() {
   const route = useRoute()
   const { state } = useTrip()
-  const [, section, param, extra, extra2] = route.split('/')
+  const [, section, param, extra, extra2, extra3] = route.split('/')
   const hasDestination = !!state.trip.destination && state.trip.days.length > 0
 
   useEffect(() => {
@@ -74,11 +74,11 @@ export default function App() {
     case 'nearby':
       return tripScreen(<Nearby key={state.trip.id} />)
     case 'eat':
-      return tripScreen(<DayFood key={`${param}-${extra ?? ''}`} dayId={param ?? ''} meal={extra} />)
+      return tripScreen(<DayFood key={`${param}-${extra ?? ''}-${extra2 ?? ''}`} dayId={param ?? ''} meal={extra} visitId={extra2} />)
     case 'restaurant':
-      return tripScreen(<Restaurant key={param} id={param ?? ''} dayId={extra} meal={extra2} />)
+      return tripScreen(<Restaurant key={param} id={param ?? ''} dayId={extra} meal={extra2} visitId={extra3} />)
     case 'add':
-      return tripScreen(<AddPlaces key={param} dayId={param ?? ''} />)
+      return tripScreen(<AddPlaces key={`${param}-${extra ?? ''}`} dayId={param ?? ''} visitId={extra} />)
     default:
       return <Home />
   }

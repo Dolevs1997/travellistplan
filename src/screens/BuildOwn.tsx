@@ -1,20 +1,22 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowRight, BedDouble, ChevronDown, ChevronUp, ClipboardPaste, GripVertical, Plus, Sparkles, X } from 'lucide-react'
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import RoutePicker from '../components/RoutePicker'
+import { DayVisit, useVisitEditor } from '../components/VisitParts'
+import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { IconButton, cx } from '../components/ui'
+import { IconButton, IconTile, cx } from '../components/ui'
+import { usePlacePhoto } from '../data/cityPhoto'
+import { PARTS, moveToPart, nextInPart, partOf, type DayPart } from '../data/dayParts'
 import { searchPlaces, KIND_LABEL } from '../data/places'
-import { shortDate, tripLegs } from '../data/helpers'
-import type { Day, Destination, PlaceInfo, Stop } from '../data/types'
+import { fromMin, hasLocation, shortDate, timeRange, tripLegs } from '../data/helpers'
+import { briefOf } from '../data/tripEdit'
+import { visitsOnDay } from '../data/visits'
+import type { Day, Destination, Stop } from '../data/types'
 import { useTrip } from '../state/TripStore'
 import { href, navigate } from '../router'
 
 const formatDay = (iso: string) => new Intl.DateTimeFormat('he-IL', { weekday: 'long' }).format(new Date(`${iso}T12:00:00`))
-const partOfDay = (hhmm: string) => {
-  const h = Number(hhmm.slice(0, 2))
-  return h < 12 ? 'בוקר' : h < 17 ? 'צהריים' : 'ערב'
-}
 
 /** "I have a route": add the places planned for each day, city by city, and where you sleep */
 export default function BuildOwn() {
@@ -56,7 +58,7 @@ export default function BuildOwn() {
           </IconButton>
           <div className="flex flex-1 flex-col gap-0.5">
             <h1 className="text-[22px] font-bold">המסלול שלי</h1>
-            <span className="text-[13px] text-muted">הוסיפו מה שתכננתם – אנחנו נסדר זמנים והגעה</span>
+            <span className="text-[13px] text-muted">לחצו על מקום לתמונות, דירוגים וביקורות</span>
           </div>
         </header>
 
@@ -146,127 +148,204 @@ function LodgingRow({ destination, checkIn, checkOut, legIndex }: { destination:
   )
 }
 
-/** An open day: its places (drag to reorder, remove) and a field to add more */
+/** An open day: its places as cards by morning, afternoon and evening; drag between them; add by recommendation or by hand */
 function OpenDay({ day, number, near, onClose }: { day: Day; number: number; near: Destination; onClose: () => void }) {
-  const { dispatch } = useTrip()
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
-  const ids = day.stops.map((s) => s.id)
+  const { state, dispatch } = useTrip()
+  const { trip } = state
+  const brief = briefOf(trip)
+  const visitEditor = useVisitEditor(brief, (p) => dispatch({ type: 'setBrief', brief: { ...brief, ...p } }), trip.days, false)
+  const plans = visitsOnDay(trip.brief, trip.days.indexOf(day))
+  const [picker, setPicker] = useState<{ part: DayPart; tab: 'rec' | 'manual' } | null>(null)
+  const [moved, setMoved] = useState<{ name: string; label: string; from: string; to: string; before: Stop[] } | null>(null)
+  const timer = useRef<number | undefined>(undefined)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 160, tolerance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
+  const free = day.stops.filter((s) => !s.visitId)
+  const ids = free.map((s) => s.id)
+  const closePicker = useCallback(() => setPicker(null), [])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const nameOf = (id: string | number) => day.stops.find((s) => s.id === id)?.name ?? ''
+  const accessibility = {
+    screenReaderInstructions: { draggable: 'לגרירה: רווח, חצים להזזה, רווח לשחרור, Escape לביטול' },
+    announcements: {
+      onDragStart: ({ active }: { active: { id: string | number } }) => `${nameOf(active.id)} נגרר`,
+      onDragOver: () => undefined,
+      onDragEnd: ({ active }: { active: { id: string | number } }) => `${nameOf(active.id)} שוחרר`,
+      onDragCancel: ({ active }: { active: { id: string | number } }) => `הגרירה של ${nameOf(active.id)} בוטלה`,
+    },
+  }
+
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return
-    dispatch({ type: 'reorder', dayId: day.id, from: ids.indexOf(String(active.id)), to: ids.indexOf(String(over.id)) })
+    const stop = day.stops.find((s) => s.id === active.id)
+    if (!stop) return
+    const overId = String(over.id)
+    const target = overId.startsWith('part:') ? (overId.slice(5) as DayPart) : partOf(day.stops.find((s) => s.id === overId)?.start ?? stop.start)
+    const next = moveToPart(day, stop.id, target, overId.startsWith('part:') ? undefined : overId)
+    dispatch({ type: 'setDayStops', dayId: day.id, stops: next })
+    if (target !== partOf(stop.start)) {
+      const now = next.find((s) => s.id === stop.id)!
+      setMoved({ name: stop.name, label: PARTS.find((p) => p.id === target)!.label, from: stop.start, to: now.start, before: day.stops })
+      window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => setMoved(null), 7000)
+    }
   }
+
   return (
-    <section className="flex flex-col gap-2 rounded-card border-[1.5px] border-accent bg-surface p-3" aria-label={`יום ${number}`}>
-      <button type="button" aria-expanded onClick={onClose} className="flex min-h-8 items-center justify-between text-start">
-        <span className="text-base font-semibold">
+    <section className="flex flex-col gap-2 rounded-card border-[1.5px] border-accent bg-surface p-2.5" aria-label={`יום ${number}`}>
+      <button type="button" aria-expanded onClick={onClose} className="flex min-h-8 items-center justify-between px-0.5 text-start">
+        <span className="text-base font-bold">
           יום {number} · {formatDay(day.date)} {shortDate(day.date)}
         </span>
         <ChevronUp size={18} aria-hidden="true" />
       </button>
-      {day.stops.length > 0 && (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-            <ol className="flex flex-col gap-1.5">
-              {day.stops.map((s) => (
-                <PlaceRow key={s.id} stop={s} onRemove={() => dispatch({ type: 'removeStop', stopId: s.id })} />
-              ))}
-            </ol>
-          </SortableContext>
-        </DndContext>
+      <DndContext sensors={sensors} accessibility={accessibility} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+          <div className="flex flex-col gap-1.5">
+            {PARTS.map((p) => {
+              const here = free.filter((s) => partOf(s.start) === p.id)
+              const blocks = plans.filter((v) => partOf(fromMin(v.leave)) === p.id)
+              return (
+                <div key={p.id} className="flex flex-col gap-1.5">
+                  <h3 className="mx-0.5 mt-1.5 flex items-center gap-1.5 text-[13px] font-bold text-muted">
+                    {p.label}
+                    <span className="text-xs font-medium">{p.hours}</span>
+                    <span className="h-px flex-1 bg-border" aria-hidden="true" />
+                  </h3>
+                  {here.length > 0 && (
+                    <ol className="flex flex-col gap-1.5">
+                      {here.map((s) => (
+                        <RouteCard key={s.id} stop={s} dayId={day.id} onRemove={() => dispatch({ type: 'removeStop', stopId: s.id })} />
+                      ))}
+                    </ol>
+                  )}
+                  {blocks.map((v) => (
+                    <DayVisit key={v.visit.id} plan={v} day={day} onEdit={() => visitEditor.openVisit(v.visit)} />
+                  ))}
+                  {!here.length && !blocks.length ? <EmptyPart part={p.id} label={p.label} onOpen={() => setPicker({ part: p.id, tab: 'rec' })} /> : <PartEnd part={p.id} />}
+                </div>
+              )
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
+      {moved && (
+        <div role="status" className="flex items-center gap-2.5 rounded-2xl bg-text py-2 ps-3 pe-2 text-bg">
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-sm font-semibold">
+              <bdi>{moved.name}</bdi> עבר ל{moved.label}
+            </span>
+            <span className="text-xs opacity-75">
+              מ-{moved.from} ל-{moved.to}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              dispatch({ type: 'setDayStops', dayId: day.id, stops: moved.before })
+              setMoved(null)
+            }}
+            className="h-9 shrink-0 rounded-[11px] bg-bg px-3 text-sm font-semibold text-text"
+          >
+            ביטול
+          </button>
+        </div>
       )}
-      <AddPlace onPick={(place) => dispatch({ type: 'addPlace', dayId: day.id, place })} near={near} label={`הוספת מקום ליום ${number}`} />
-      <a href={href(`/add/${day.id}`)} className="flex h-10 items-center gap-1.5 self-start rounded-xl px-1 text-[13px] font-semibold text-accent">
-        <Sparkles size={15} aria-hidden="true" />
-        מקומות מומלצים ליום {number}
-      </a>
+      <div className="grid grid-cols-2 gap-1.5 pt-1">
+        <button type="button" onClick={() => setPicker({ part: firstOpenPart(day), tab: 'rec' })} className="flex h-[46px] items-center justify-center gap-1.5 rounded-[13px] bg-accent text-sm font-semibold text-on-accent">
+          <Sparkles size={15} aria-hidden="true" />
+          מקומות מומלצים
+        </button>
+        <button type="button" onClick={() => setPicker({ part: firstOpenPart(day), tab: 'manual' })} className="flex h-[46px] items-center justify-center gap-1.5 rounded-[13px] border-[1.5px] border-accent text-sm font-semibold text-accent">
+          <Plus size={15} aria-hidden="true" />
+          הוספה ידנית
+        </button>
+      </div>
+      {picker && <RoutePicker day={day} number={number} near={near} initialPart={picker.part} initialTab={picker.tab} onClose={closePicker} />}
+      {visitEditor.sheet}
     </section>
   )
 }
 
-function PlaceRow({ stop, onRemove }: { stop: Stop; onRemove: () => void }) {
+/** The first part of the day that still has room */
+const firstOpenPart = (day: Day): DayPart => {
+  const open = PARTS.find((p) => !day.stops.some((s) => partOf(s.start) === p.id))
+  return open?.id ?? PARTS.find((p) => nextInPart(day, p.id).free)?.id ?? 'evening'
+}
+
+/** An empty part of the day: tap to add, or drop a place here */
+function EmptyPart({ part, label, onOpen }: { part: DayPart; label: string; onOpen: () => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `part:${part}` })
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={onOpen}
+      className={cx('h-[46px] rounded-[13px] border-[1.5px] border-dashed text-sm font-semibold text-accent-2', isOver ? 'border-accent bg-accent/12 text-accent' : 'border-accent-2/60 bg-accent-2/6')}
+    >
+      {isOver ? `שחררו כאן · ${label}` : part === 'morning' ? 'הבוקר פנוי – מקום או בית קפה' : part === 'noon' ? 'הצהריים פנויים – מסעדה או מקום' : 'הערב פנוי – מסעדה או מקום'}
+    </button>
+  )
+}
+
+/** A thin target under a part's cards, for dropping a place at its end */
+function PartEnd({ part }: { part: DayPart }) {
+  const { setNodeRef, isOver, active } = useDroppable({ id: `part:${part}` })
+  return <div ref={setNodeRef} aria-hidden="true" className={cx('rounded-lg transition-[height] duration-150', active ? 'h-7 border border-dashed border-border-strong' : 'h-0', isOver && 'border-accent bg-accent/12')} />
+}
+
+/** One place: photo, name, time, type, rating; tap for its full page */
+function RouteCard({ stop, dayId, onRemove }: { stop: Stop; dayId: string; onRemove: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: stop.id })
+  const manual = stop.info?.source === 'manual'
+  const photo = usePlacePhoto(manual ? undefined : stop.name, stop.info?.image, stop)
+  const [failed, setFailed] = useState(false)
+  const google = stop.info?.source === 'google'
+  const to = google && stop.kind === 'food' ? `/restaurant/${stop.info!.ref}/${dayId}` : `/place/${stop.id}`
+  const type = manual ? (stop.info?.description ?? KIND_LABEL[stop.kind]) : KIND_LABEL[stop.kind]
   return (
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cx('flex items-center gap-2 rounded-xl bg-bg px-1.5 py-1', isDragging && 'relative z-10 shadow-[var(--float-shadow)]')}
+      className={cx('flex min-h-[84px] items-stretch overflow-hidden rounded-2xl border border-border bg-surface', isDragging && 'relative z-10 border-2 border-accent shadow-[0_16px_32px_rgba(21,24,29,0.24)]')}
     >
-      <button type="button" {...attributes} {...listeners} aria-label={`גרירה: ${stop.name}`} className="flex h-10 w-7 cursor-grab touch-none items-center justify-center text-muted">
-        <GripVertical size={16} aria-hidden="true" />
-      </button>
-      <span className="min-w-0 flex-1 truncate text-[15px]">{stop.name}</span>
-      <span className="shrink-0 text-xs text-muted">
-        {partOfDay(stop.start)}
-        {stop.kind === 'food' ? ' · מסעדה' : ''}
+      <a href={href(to)} aria-label={`${stop.name} – תמונות, דירוג וביקורות`} className="flex min-w-0 flex-1 items-center gap-2.5 p-1.5">
+        {photo && !failed ? (
+          <img src={photo.src} alt="" loading="lazy" onError={() => setFailed(true)} className="size-[72px] shrink-0 rounded-xl object-cover" />
+        ) : (
+          <span className="size-[72px] shrink-0">
+            <IconTile kind={stop.kind} size={72} />
+          </span>
+        )}
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <bdi className="truncate text-[15px] font-semibold">{stop.name}</bdi>
+          <span className="truncate text-xs text-muted">
+            {timeRange(stop.start, stop.end)} · {type}
+          </span>
+          {stop.info?.rating ? (
+            <span className="text-xs text-muted">
+              <b className="text-text">★ {stop.info.rating.toFixed(1)}</b>
+              {stop.info.ratingCount ? ` (${stop.info.ratingCount.toLocaleString('en-US')})` : ''}
+            </span>
+          ) : manual ? (
+            <span className="truncate text-xs text-muted">{stop.note ?? (hasLocation(stop) ? 'המקום שלך' : 'המקום שלך · בלי כתובת')}</span>
+          ) : null}
+          {stop.kind === 'food' ? (
+            <span className="self-start rounded-full bg-accent/12 px-1.5 py-px text-[11px] font-semibold text-accent">מסעדה</span>
+          ) : stop.needsBooking && !stop.booked ? (
+            <span className="self-start rounded-full bg-accent-2/12 px-1.5 py-px text-[11px] font-semibold text-accent-2">צריך להזמין מראש</span>
+          ) : null}
+        </span>
+      </a>
+      <span className="flex w-[38px] shrink-0 flex-col items-center justify-between border-s border-border py-1 text-muted">
+        <button type="button" {...attributes} {...listeners} aria-label={`גרירה: ${stop.name}`} className="flex h-9 w-9 cursor-grab touch-none items-center justify-center">
+          <GripVertical size={16} aria-hidden="true" />
+        </button>
+        <button type="button" aria-label={`הסרת ${stop.name}`} onClick={onRemove} className="flex h-9 w-9 items-center justify-center hover:text-accent-2">
+          <X size={16} aria-hidden="true" />
+        </button>
       </span>
-      <button type="button" aria-label={`הסרת ${stop.name}`} onClick={onRemove} className="flex size-10 items-center justify-center text-muted hover:text-accent-2">
-        <X size={16} aria-hidden="true" />
-      </button>
     </li>
-  )
-}
-
-/** Dashed "add a place" field; suggestions come from the place search near the city */
-function AddPlace({ onPick, near, label }: { onPick: (p: PlaceInfo) => void; near: Destination; label: string }) {
-  const [q, setQ] = useState('')
-  const [hits, setHits] = useState<PlaceInfo[]>([])
-  const [busy, setBusy] = useState(false)
-  const listId = useId()
-  useEffect(() => {
-    const query = q.trim()
-    if (query.length < 2) {
-      setHits([])
-      return
-    }
-    const ctrl = new AbortController()
-    const t = window.setTimeout(() => {
-      setBusy(true)
-      searchPlaces(query, near, ctrl.signal)
-        .then((r) => setHits(r.slice(0, 5)))
-        .catch(() => setHits([]))
-        .finally(() => setBusy(false))
-    }, 300)
-    return () => {
-      window.clearTimeout(t)
-      ctrl.abort()
-    }
-  }, [q, near])
-  const pick = (p: PlaceInfo) => {
-    onPick(p)
-    setQ('')
-    setHits([])
-  }
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="flex h-11 items-center gap-2 rounded-xl border-[1.5px] border-dashed border-border-strong px-3 focus-within:border-accent">
-        <Plus size={18} className="shrink-0 text-accent" strokeWidth={2.25} aria-hidden="true" />
-        <span className="sr-only">{label}</span>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && hits[0] && pick(hits[0])}
-          placeholder="הוספת מקום, מסעדה או פעילות"
-          role="combobox"
-          aria-expanded={hits.length > 0}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
-        />
-        {busy && <span className="text-xs text-muted">מחפש…</span>}
-      </label>
-      {hits.length > 0 && (
-        <ul id={listId} role="listbox" aria-label="מקומות מתאימים" className="overflow-hidden rounded-xl border border-border bg-surface">
-          {hits.map((p) => (
-            <li key={p.ref} role="option" aria-selected="false">
-              <button type="button" onClick={() => pick(p)} className="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-start hover:bg-raised">
-                <span className="text-sm font-medium">{p.name}</span>
-                <span className="text-xs text-muted">{[KIND_LABEL[p.kind], p.address].filter(Boolean).join(' · ')}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   )
 }
 

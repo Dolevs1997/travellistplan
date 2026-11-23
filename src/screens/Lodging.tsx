@@ -4,7 +4,7 @@ import { LngLatBounds, Map as MLMap, Marker, type GeoJSONSource } from 'maplibre
 import LodgingSearch from '../components/LodgingSearch'
 import { IconButton, cx } from '../components/ui'
 import { addDays, lodgingLinks } from '../data/brief'
-import { distanceKm, shortDate, tripLegs } from '../data/helpers'
+import { distanceKm, hasLocation, shortDate, tripLegs } from '../data/helpers'
 import { LODGING_LABEL, bookingFor, googlePlaceUrl, lodgingDetails, lodgingNear, nearStops, stopsCenter, type LodgingDetails, type LodgingKind, type LodgingPlace } from '../data/lodging'
 import { ON_STREET_M, WALK_M_PER_MIN, lodgingAround, metersTo, walkMinutes, type Target } from '../data/placeSearch'
 import { briefOf } from '../data/tripEdit'
@@ -51,7 +51,7 @@ export default function Lodging({ legIndex }: { legIndex: number }) {
   const brief = briefOf(trip)
 
   // Only stops in this city (a day trip far away shouldn't pull the search area out of town)
-  const stops = useMemo(() => (leg ? leg.days.flatMap((d) => d.stops).filter((s) => distanceKm(s, leg.destination) <= 15) : []), [leg])
+  const stops = useMemo(() => (leg ? leg.days.flatMap((d) => d.stops).filter((s) => hasLocation(s) && distanceKm(s, leg.destination) <= 15) : []), [leg])
   const cityCenter = leg ? { lat: leg.destination.lat, lng: leg.destination.lng } : { lat: 0, lng: 0 }
   const planCenter = stopsCenter(stops)
   const [area, setArea] = useState<Area>(planCenter ? 'stops' : 'center')

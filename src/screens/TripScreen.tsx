@@ -6,10 +6,13 @@ import DayMeals from '../components/DayMeals'
 import { useRemoveWithUndo } from '../components/UndoRemove'
 import { nearbyRestaurantsUrl } from '../data/restaurants'
 import Timeline from '../components/Timeline'
+import { DayVisit, useVisitEditor } from '../components/VisitParts'
+import { briefOf } from '../data/tripEdit'
+import { visitsOnDay } from '../data/visits'
 import { DayChips, IconButton, IconTile, MODE_ICON, StopNode, cx } from '../components/ui'
 import { useTrip } from '../state/TripStore'
 import { usePlacePhoto } from '../data/cityPhoto'
-import { directionsUrl, durationLabel, formatDayLong, freeSlot, isPastDay, stopDuration, stopStatus, timeRange, transitLabel } from '../data/helpers'
+import { directionsUrl, hasLocation, durationLabel, formatDayLong, freeSlot, isPastDay, stopDuration, stopStatus, timeRange, transitLabel } from '../data/helpers'
 import type { Day, Trip } from '../data/types'
 import { href, navigate } from '../router'
 
@@ -214,14 +217,7 @@ export default function TripScreen({ expanded }: { expanded: boolean }) {
                   </header>
                   <DayChips days={trip.days} activeId={day.id} onSelect={(id) => dispatch({ type: 'setDay', dayId: id })} />
                   <div className="pt-1">
-                    <Timeline
-                      trip={trip}
-                      day={day}
-                      selectedStopId={selectedStopId}
-                      onSelect={selectStop}
-                      onReorder={(from, to) => dispatch({ type: 'reorder', dayId: day.id, from, to })}
-                      onRemove={(id) => removeStop(day, id)}
-                    />
+                    <DaySchedule trip={trip} day={day} dayIndex={dayIndex} selectedStopId={selectedStopId} onSelect={selectStop} onRemove={(id) => removeStop(day, id)} />
                   </div>
                   <DayMeals day={day} />
                 </>
@@ -334,15 +330,17 @@ function FocusCard({ trip, day, index, isNext, onAllDay }: { trip: Trip; day: Da
         </span>
       </a>
       <div className="flex gap-2">
-        <a
-          href={directionsUrl(stop)}
-          target="_blank"
-          rel="noreferrer"
-          className="flex h-12 flex-1 items-center justify-center gap-2 rounded-tile bg-accent text-[15px] font-semibold text-on-accent transition-transform duration-200 ease-out active:scale-[0.98]"
-        >
-          <Navigation size={18} aria-hidden="true" />
-          ניווט
-        </a>
+        {hasLocation(stop) && (
+          <a
+            href={directionsUrl(stop)}
+            target="_blank"
+            rel="noreferrer"
+            className="flex h-12 flex-1 items-center justify-center gap-2 rounded-tile bg-accent text-[15px] font-semibold text-on-accent transition-transform duration-200 ease-out active:scale-[0.98]"
+          >
+            <Navigation size={18} aria-hidden="true" />
+            ניווט
+          </a>
+        )}
         <button
           type="button"
           onClick={onAllDay}
@@ -363,5 +361,48 @@ function FocusThumb({ stop }: { stop: Day['stops'][number] }) {
     <img src={photo.src} alt="" onError={() => setFailed(true)} className="size-14 shrink-0 rounded-tile object-cover" />
   ) : (
     <IconTile kind={stop.kind} size={56} />
+  )
+}
+
+/** The day's list of stops, with its few-hours visits as blocks in their place in the day */
+function DaySchedule({
+  trip,
+  day,
+  dayIndex,
+  selectedStopId,
+  onSelect,
+  onRemove,
+}: {
+  trip: Trip
+  day: Day
+  dayIndex: number
+  selectedStopId: string | null
+  onSelect: (id: string) => void
+  onRemove: (id: string) => void
+}) {
+  const { dispatch } = useTrip()
+  const brief = briefOf(trip)
+  const editor = useVisitEditor(brief, (p) => dispatch({ type: 'setBrief', brief: { ...brief, ...p } }), trip.days, false)
+  const plans = visitsOnDay(trip.brief, dayIndex)
+  const rest = plans.length ? { ...day, stops: day.stops.filter((s) => !s.visitId) } : day
+  const firstFree = rest.stops[0] ? Number(rest.stops[0].start.slice(0, 2)) * 60 + Number(rest.stops[0].start.slice(3)) : Infinity
+  const block = (p: (typeof plans)[number]) => <DayVisit key={p.visit.id} plan={p} day={day} onEdit={() => editor.openVisit(p.visit)} />
+  return (
+    <div className="flex flex-col gap-2">
+      {plans.filter((p) => p.leave < firstFree).map(block)}
+      {(rest.stops.length > 0 || !plans.length) && (
+        <Timeline
+          trip={trip}
+          day={rest}
+          noSlot={plans.length > 0}
+          selectedStopId={selectedStopId}
+          onSelect={onSelect}
+          onReorder={(from, to) => dispatch({ type: 'reorder', dayId: day.id, from: day.stops.indexOf(rest.stops[from]), to: day.stops.indexOf(rest.stops[to]) })}
+          onRemove={onRemove}
+        />
+      )}
+      {plans.filter((p) => p.leave >= firstFree).map(block)}
+      {editor.sheet}
+    </div>
   )
 }

@@ -96,6 +96,14 @@ async function streetLines(name: string, v: NonNullable<Spot['viewport']>, signa
   return lines
 }
 
+/** Where a picked suggestion is (for an address typed by hand) */
+export async function spotOf(s: Suggestion, session: string) {
+  const r = await fetch(`/api/spot?${new URLSearchParams({ id: s.id, session })}`)
+  if (!r.ok) throw new Error(`spot ${r.status}`)
+  const spot = (await r.json()) as Spot
+  return { lat: spot.lat, lng: spot.lng }
+}
+
 /** Turn a picked suggestion into something to measure distances from */
 export async function resolveTarget(s: Suggestion, session: string, signal?: AbortSignal): Promise<Target> {
   const r = await fetch(`/api/spot?${new URLSearchParams({ id: s.id, session })}`, { signal })

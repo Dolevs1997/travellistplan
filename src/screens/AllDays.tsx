@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, CalendarPlus, Plus } from 'lucide-react'
+import { DayVisit, useVisitEditor } from '../components/VisitParts'
 import { IconButton, cx } from '../components/ui'
 import { DEFAULT_DAY_END, durationLabel, freeSlot, slotPartLabel, stopDuration, tripLegs } from '../data/helpers'
 import { downloadCalendar } from '../data/calendar'
@@ -7,6 +8,7 @@ import { KIND_LABEL } from '../data/places'
 import { hoursLabel, recommendedMode, transferOptions, type TransferMode } from '../data/transport'
 import { DESTINATIONS } from '../data/destinations'
 import { briefOf } from '../data/tripEdit'
+import { visitsOnDay, type VisitPlan } from '../data/visits'
 import type { Day, Destination, Stop } from '../data/types'
 import { href, navigate, prefersReducedMotion } from '../router'
 import { useTrip } from '../state/TripStore'
@@ -24,13 +26,15 @@ const MODE_WORD: Record<TransferMode, string> = { רכבת: 'רכבת', אוטו
 type Row =
   | { kind: 'stop'; stop: Stop; n: number }
   | { kind: 'move'; time?: string; title: string; meta: string }
+  | { kind: 'visit'; plan: VisitPlan }
 
 /** The whole trip on one page: every day, its stops, travel days and free time – and adding it to a calendar */
 export default function AllDays() {
-  const { state } = useTrip()
+  const { state, dispatch } = useTrip()
   const { trip } = state
   const brief = briefOf(trip)
   const legs = tripLegs(trip)
+  const visitEditor = useVisitEditor(brief, (p) => dispatch({ type: 'setBrief', brief: { ...brief, ...p } }), trip.days, false)
   const [active, setActive] = useState(trip.days[0]?.id ?? '')
   const sections = useRef(new Map<string, HTMLElement>())
   const stopsCount = trip.days.reduce((n, d) => n + d.stops.length, 0)
@@ -74,7 +78,9 @@ export default function AllDays() {
     const i = trip.days.indexOf(day)
     const here = places[i]
     const mi = moveIndex[i]
-    if (mi >= 0) {
+    const dayVisits = visitsOnDay(trip.brief, i)
+    // A visit on the way already shows the drive there and onward
+    if (mi >= 0 && !dayVisits.length) {
       const from = places[i - 1]
       const mode = (brief.transfers?.[mi] as TransferMode | undefined) ?? (from.dest && here.dest ? recommendedMode(from.dest, here.dest) : undefined)
       const opt = mode && from.dest && here.dest ? transferOptions(from.dest, here.dest).find((o) => o.mode === mode) : undefined
@@ -90,7 +96,14 @@ export default function AllDays() {
       const rental = brief.rentals?.[here.dest.id]
       if (rental) rows.push({ kind: 'move', title: 'איסוף רכב שכור', meta: [rental.pickup, rental.company].filter(Boolean).join(' · ') })
     }
-    day.stops.forEach((s, n) => rows.push({ kind: 'stop', stop: s, n: n + 1 }))
+    const free = day.stops.filter((s) => !s.visitId)
+    let v = 0
+    free.forEach((s, n) => {
+      const at = Number(s.start.slice(0, 2)) * 60 + Number(s.start.slice(3))
+      while (dayVisits[v] && dayVisits[v].leave < at) rows.push({ kind: 'visit', plan: dayVisits[v++] })
+      rows.push({ kind: 'stop', stop: s, n: n + 1 })
+    })
+    while (dayVisits[v]) rows.push({ kind: 'visit', plan: dayVisits[v++] })
     return rows
   }
 
@@ -157,7 +170,8 @@ export default function AllDays() {
         {trip.days.map((day, i) => {
           const rows = rowsFor(day)
           const slot = freeSlot(day)
-          const empty = day.stops.length === 0
+          const hasVisit = rows.some((r) => r.kind === 'visit')
+          const empty = day.stops.length === 0 && !hasVisit
           return (
             <section
               key={day.id}
@@ -188,8 +202,10 @@ export default function AllDays() {
               {rows.length > 0 && (
                 <ol className="flex flex-col">
                   {rows.map((r, j) => (
-                    <li key={r.kind === 'stop' ? r.stop.id : `m-${j}`} className={cx(j < rows.length - 1 && 'border-b border-border')}>
-                      {r.kind === 'stop' ? (
+                    <li key={r.kind === 'stop' ? r.stop.id : r.kind === 'visit' ? r.plan.visit.id : `m-${j}`} className={cx(j < rows.length - 1 && r.kind !== 'visit' && 'border-b border-border')}>
+                      {r.kind === 'visit' ? (
+                        <DayVisit plan={r.plan} day={day} onEdit={() => visitEditor.openVisit(r.plan.visit)} />
+                      ) : r.kind === 'stop' ? (
                         <a href={href(`/place/${r.stop.id}`)} className="flex items-start gap-3.5 py-3">
                           <b className="w-12 shrink-0 pt-px text-[15px]">{r.stop.start}</b>
                           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -211,7 +227,7 @@ export default function AllDays() {
                 </ol>
               )}
 
-              {!empty && slot && (
+              {!empty && !hasVisit && slot && (
                 <a
                   href={href(`/add/${day.id}`)}
                   className="mt-1 flex items-center gap-3.5 rounded-xl border-[1.5px] border-dashed border-accent-2/60 bg-accent-2/6 py-2.5 ps-0 text-accent-2"
@@ -226,6 +242,7 @@ export default function AllDays() {
           )
         })}
       </div>
+      {visitEditor.sheet}
     </div>
   )
 }
