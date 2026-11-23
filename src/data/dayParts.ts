@@ -109,6 +109,57 @@ function pushLater(stops: Stop[]) {
   })
 }
 
+/**
+ * The day after giving a stop a new time. With `shift`, whatever now overlaps it moves after it (in a chain,
+ * with time to get there); places that don't overlap keep their time, and so do a few-hours visit's stops.
+ */
+export function retimeStop(day: Day, stopId: string, start: number, minutes: number, shift: boolean) {
+  const was = [...day.stops].sort(byStart)
+  const stop = was.find((s) => s.id === stopId)
+  const none = { stops: day.stops, moved: [] as { id: string; name: string; from: string; to: string }[], overlaps: [] as Stop[], stuck: [] as Stop[], tooLate: false }
+  if (!stop) return none
+  if (start + minutes >= 24 * 60) return { ...none, tooLate: true }
+  const placed = { ...stop, start: fromMin(start), end: fromMin(start + minutes) }
+  const rest = was.filter((s) => s.id !== stopId)
+  const overlaps = rest.filter((s) => toMin(s.start) < start + minutes && toMin(s.end) > start)
+  const stuck = overlaps.filter((s) => s.visitId)
+  if (!shift) return { ...none, stops: relink([...rest, placed].sort(byStart), was), overlaps, stuck }
+
+  const before = rest.filter((s) => toMin(s.end) <= start || (s.visitId && toMin(s.start) < start))
+  const after = rest.filter((s) => !before.includes(s))
+  let prev: Stop = placed
+  let end = start + minutes
+  let tooLate = false
+  const timed = after.map((s) => {
+    let next = s
+    if (!s.visitId && toMin(s.start) < end) {
+      const from = round5(end + estimateTransit(prev, s).minutes)
+      if (from + stopDuration(s) >= 24 * 60) tooLate = true
+      else next = { ...s, start: fromMin(from), end: fromMin(from + stopDuration(s)) }
+    }
+    prev = next
+    end = Math.max(end, toMin(next.end))
+    return next
+  })
+  if (tooLate) return { ...none, overlaps, stuck, tooLate }
+  const moved = timed.flatMap((s, i) => (s.start === after[i].start ? [] : [{ id: s.id, name: s.name, from: after[i].start, to: `${s.start}–${s.end}` }]))
+  return { ...none, stops: relink([...before, placed, ...timed], was), moved, overlaps, stuck }
+}
+
+/** Whether a place is open for the whole time, from that day's hours ("10:00–19:00"); undefined when unknown */
+export function openDuring(hours: string | undefined, start: number, end: number) {
+  if (!hours || /am|pm/i.test(hours)) return undefined
+  if (/closed|סגור/i.test(hours)) return false
+  if (/24/.test(hours) && !/\d:\d/.test(hours)) return true
+  const ranges = [...hours.matchAll(/(\d{1,2}):(\d{2})\s*[–—-]\s*(\d{1,2}):(\d{2})/g)].map((m) => {
+    const from = Number(m[1]) * 60 + Number(m[2])
+    const to = Number(m[3]) * 60 + Number(m[4])
+    return [from, to <= from ? to + 24 * 60 : to]
+  })
+  if (!ranges.length) return undefined
+  return ranges.some(([from, to]) => start >= from && end <= to)
+}
+
 /** Coordinates from a pasted Google Maps link, or typed as "41.14, 9.53" */
 export function coordsFromText(text: string) {
   const t = decodeURIComponent(text.trim())

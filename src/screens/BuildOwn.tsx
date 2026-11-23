@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowRight, BedDouble, ChevronDown, ChevronUp, ClipboardPaste, GripVertical, Plus, Sparkles, X } from 'lucide-react'
+import { ArrowRight, BedDouble, ChevronDown, ChevronUp, ClipboardPaste, Clock, GripVertical, Plus, Sparkles, X } from 'lucide-react'
 import RoutePicker from '../components/RoutePicker'
+import StopTimeSheet from '../components/StopTimeSheet'
 import { DayVisit, useVisitEditor } from '../components/VisitParts'
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -18,15 +19,45 @@ import { href, navigate } from '../router'
 
 const formatDay = (iso: string) => new Intl.DateTimeFormat('he-IL', { weekday: 'long' }).format(new Date(`${iso}T12:00:00`))
 
+/** Which day was open (and, when leaving for a place page, how far down), so coming back lands on it */
+type RouteSpot = { day: string | null; y?: number }
+const routeKey = (tripId: string) => `trip-planner:route:${tripId}`
+const readRouteSpot = (tripId: string): RouteSpot | null => {
+  try {
+    const raw = sessionStorage.getItem(routeKey(tripId))
+    return raw ? (JSON.parse(raw) as RouteSpot) : null
+  } catch {
+    return null
+  }
+}
+const writeRouteSpot = (tripId: string, spot: RouteSpot) => {
+  try {
+    sessionStorage.setItem(routeKey(tripId), JSON.stringify(spot))
+  } catch {
+    // Without storage the screen just opens on the first day
+  }
+}
+
 /** "I have a route": add the places planned for each day, city by city, and where you sleep */
 export default function BuildOwn() {
   const { state } = useTrip()
   const { trip } = state
   const legs = tripLegs(trip)
-  const [city, setCity] = useState(0)
+  const [saved] = useState(() => {
+    const spot = readRouteSpot(trip.id)
+    return spot && (spot.day === null || trip.days.some((d) => d.id === spot.day)) ? spot : null
+  })
+  const [city, setCity] = useState(() => Math.max(0, saved?.day ? legs.findIndex((l) => l.days.some((d) => d.id === saved.day)) : 0))
   const leg = legs[Math.min(city, legs.length - 1)]
-  const [openDay, setOpenDay] = useState<string | null>(leg?.days[0]?.id ?? null)
+  const [openDay, setOpenDay] = useState<string | null>(saved ? saved.day : (leg?.days[0]?.id ?? null))
   const [pasting, setPasting] = useState(false)
+
+  useEffect(() => writeRouteSpot(trip.id, { day: openDay }), [trip.id, openDay])
+  useEffect(() => {
+    if (saved?.y === undefined) return
+    const frame = requestAnimationFrame(() => window.scrollTo(0, saved.y!))
+    return () => cancelAnimationFrame(frame)
+  }, [saved])
 
   const placed = trip.days.reduce((n, d) => n + d.stops.length, 0)
   const empty = trip.days.filter((d) => d.stops.length === 0).length
@@ -49,7 +80,12 @@ export default function BuildOwn() {
   const dayNumber = (d: Day) => trip.days.indexOf(d) + 1
 
   return (
-    <div className="mx-auto flex min-h-full max-w-[560px] flex-col pb-[130px]">
+    <div
+      className="mx-auto flex min-h-full max-w-[560px] flex-col pb-[130px]"
+      onClickCapture={(e) => {
+        if ((e.target as Element).closest('a[href^="#/"]')) writeRouteSpot(trip.id, { day: openDay, y: window.scrollY })
+      }}
+    >
       <div className="flex flex-col gap-3 px-5 pt-4">
         <header className="flex items-center gap-3">
           {/* Back to the screen you came from (editing, the city screen…); the trip editor when opened directly */}
@@ -58,7 +94,7 @@ export default function BuildOwn() {
           </IconButton>
           <div className="flex flex-1 flex-col gap-0.5">
             <h1 className="text-[22px] font-bold">המסלול שלי</h1>
-            <span className="text-[13px] text-muted">לחצו על מקום לתמונות, דירוגים וביקורות</span>
+            <span className="text-[13px] text-muted">לחצו על השעה לשינוי, על המקום לפרטים</span>
           </div>
         </header>
 
@@ -156,12 +192,20 @@ function OpenDay({ day, number, near, onClose }: { day: Day; number: number; nea
   const visitEditor = useVisitEditor(brief, (p) => dispatch({ type: 'setBrief', brief: { ...brief, ...p } }), trip.days, false)
   const plans = visitsOnDay(trip.brief, trip.days.indexOf(day))
   const [picker, setPicker] = useState<{ part: DayPart; tab: 'rec' | 'manual' } | null>(null)
-  const [moved, setMoved] = useState<{ name: string; label: string; from: string; to: string; before: Stop[] } | null>(null)
+  const [moved, setMoved] = useState<{ name: string; action: string; from: string; to: string; before: Stop[] } | null>(null)
+  const [timing, setTiming] = useState<string | null>(null)
   const timer = useRef<number | undefined>(undefined)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 160, tolerance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
   const free = day.stops.filter((s) => !s.visitId)
   const ids = free.map((s) => s.id)
   const closePicker = useCallback(() => setPicker(null), [])
+  const closeTiming = useCallback(() => setTiming(null), [])
+  const timingStop = day.stops.find((s) => s.id === timing)
+  const notify = (note: NonNullable<typeof moved>) => {
+    setMoved(note)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setMoved(null), 7000)
+  }
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const nameOf = (id: string | number) => day.stops.find((s) => s.id === id)?.name ?? ''
@@ -185,9 +229,7 @@ function OpenDay({ day, number, near, onClose }: { day: Day; number: number; nea
     dispatch({ type: 'setDayStops', dayId: day.id, stops: next })
     if (target !== partOf(stop.start)) {
       const now = next.find((s) => s.id === stop.id)!
-      setMoved({ name: stop.name, label: PARTS.find((p) => p.id === target)!.label, from: stop.start, to: now.start, before: day.stops })
-      window.clearTimeout(timer.current)
-      timer.current = window.setTimeout(() => setMoved(null), 7000)
+      notify({ name: stop.name, action: `עבר ל${PARTS.find((p) => p.id === target)!.label}`, from: stop.start, to: now.start, before: day.stops })
     }
   }
 
@@ -215,7 +257,7 @@ function OpenDay({ day, number, near, onClose }: { day: Day; number: number; nea
                   {here.length > 0 && (
                     <ol className="flex flex-col gap-1.5">
                       {here.map((s) => (
-                        <RouteCard key={s.id} stop={s} dayId={day.id} onRemove={() => dispatch({ type: 'removeStop', stopId: s.id })} />
+                        <RouteCard key={s.id} stop={s} dayId={day.id} onTime={() => setTiming(s.id)} onRemove={() => dispatch({ type: 'removeStop', stopId: s.id })} />
                       ))}
                     </ol>
                   )}
@@ -233,7 +275,7 @@ function OpenDay({ day, number, near, onClose }: { day: Day; number: number; nea
         <div role="status" className="flex items-center gap-2.5 rounded-2xl bg-text py-2 ps-3 pe-2 text-bg">
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-sm font-semibold">
-              <bdi>{moved.name}</bdi> עבר ל{moved.label}
+              <bdi>{moved.name}</bdi> {moved.action}
             </span>
             <span className="text-xs opacity-75">
               מ-{moved.from} ל-{moved.to}
@@ -262,6 +304,21 @@ function OpenDay({ day, number, near, onClose }: { day: Day; number: number; nea
         </button>
       </div>
       {picker && <RoutePicker day={day} number={number} near={near} initialPart={picker.part} initialTab={picker.tab} onClose={closePicker} />}
+      {timingStop && (
+        <StopTimeSheet
+          key={timingStop.id}
+          stop={timingStop}
+          day={day}
+          number={number}
+          onClose={closeTiming}
+          onSave={(stops) => {
+            const now = stops.find((s) => s.id === timingStop.id)!
+            dispatch({ type: 'setDayStops', dayId: day.id, stops })
+            setTiming(null)
+            notify({ name: timingStop.name, action: 'עודכן', from: timingStop.start, to: now.start, before: day.stops })
+          }}
+        />
+      )}
       {visitEditor.sheet}
     </section>
   )
@@ -295,7 +352,7 @@ function PartEnd({ part }: { part: DayPart }) {
 }
 
 /** One place: photo, name, time, type, rating; tap for its full page */
-function RouteCard({ stop, dayId, onRemove }: { stop: Stop; dayId: string; onRemove: () => void }) {
+function RouteCard({ stop, dayId, onTime, onRemove }: { stop: Stop; dayId: string; onTime: () => void; onRemove: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: stop.id })
   const manual = stop.info?.source === 'manual'
   const photo = usePlacePhoto(manual ? undefined : stop.name, stop.info?.image, stop)
@@ -309,7 +366,8 @@ function RouteCard({ stop, dayId, onRemove }: { stop: Stop; dayId: string; onRem
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cx('flex min-h-[84px] items-stretch overflow-hidden rounded-2xl border border-border bg-surface', isDragging && 'relative z-10 border-2 border-accent shadow-[0_16px_32px_rgba(21,24,29,0.24)]')}
     >
-      <a href={href(to)} aria-label={`${stop.name} – תמונות, דירוג וביקורות`} className="flex min-w-0 flex-1 items-center gap-2.5 p-1.5">
+      <div className="relative flex min-w-0 flex-1 items-center gap-2.5 p-1.5">
+        <a href={href(to)} aria-label={`${stop.name} – תמונות, דירוג וביקורות`} className="absolute inset-0" />
         {photo && !failed ? (
           <img src={photo.src} alt="" loading="lazy" onError={() => setFailed(true)} className="size-[72px] shrink-0 rounded-xl object-cover" />
         ) : (
@@ -319,24 +377,29 @@ function RouteCard({ stop, dayId, onRemove }: { stop: Stop; dayId: string; onRem
         )}
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <bdi className="truncate text-[15px] font-semibold">{stop.name}</bdi>
-          <span className="truncate text-xs text-muted">
-            {timeRange(stop.start, stop.end)} · {type}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <button type="button" onClick={onTime} aria-label={`שינוי השעה של ${stop.name}, עכשיו ${stop.start} עד ${stop.end}`} className="relative z-[1] inline-flex h-8 shrink-0 items-center gap-1 rounded-[9px] bg-accent/12 px-2 text-[13px] font-bold text-accent hover:bg-accent/20">
+              <Clock size={13} aria-hidden="true" />
+              {timeRange(stop.start, stop.end)}
+            </button>
+            {stop.kind === 'food' ? (
+              <span className="truncate rounded-full bg-accent/12 px-1.5 py-px text-[11px] font-semibold text-accent">מסעדה</span>
+            ) : stop.needsBooking && !stop.booked ? (
+              <span className="truncate rounded-full bg-accent-2/12 px-1.5 py-px text-[11px] font-semibold text-accent-2">להזמין מראש</span>
+            ) : null}
           </span>
-          {stop.info?.rating ? (
-            <span className="text-xs text-muted">
-              <b className="text-text">★ {stop.info.rating.toFixed(1)}</b>
-              {stop.info.ratingCount ? ` (${stop.info.ratingCount.toLocaleString('en-US')})` : ''}
-            </span>
-          ) : manual ? (
-            <span className="truncate text-xs text-muted">{stop.note ?? (hasLocation(stop) ? 'המקום שלך' : 'המקום שלך · בלי כתובת')}</span>
-          ) : null}
-          {stop.kind === 'food' ? (
-            <span className="self-start rounded-full bg-accent/12 px-1.5 py-px text-[11px] font-semibold text-accent">מסעדה</span>
-          ) : stop.needsBooking && !stop.booked ? (
-            <span className="self-start rounded-full bg-accent-2/12 px-1.5 py-px text-[11px] font-semibold text-accent-2">צריך להזמין מראש</span>
-          ) : null}
+          <span className="truncate text-xs text-muted">
+            {stop.info?.rating ? (
+              <>
+                <b className="text-text">★ {stop.info.rating.toFixed(1)}</b>
+                {stop.info.ratingCount ? ` (${stop.info.ratingCount.toLocaleString('en-US')})` : ''} ·{' '}
+              </>
+            ) : null}
+            {type}
+            {manual ? ` · ${stop.note ?? (hasLocation(stop) ? 'המקום שלך' : 'בלי כתובת')}` : ''}
+          </span>
         </span>
-      </a>
+      </div>
       <span className="flex w-[38px] shrink-0 flex-col items-center justify-between border-s border-border py-1 text-muted">
         <button type="button" {...attributes} {...listeners} aria-label={`גרירה: ${stop.name}`} className="flex h-9 w-9 cursor-grab touch-none items-center justify-center">
           <GripVertical size={16} aria-hidden="true" />
